@@ -61,3 +61,23 @@ The React frontend should avoid depending on version-specific raw JDC/tProxy res
 If a raw API difference affects data already shown by the dashboard, normalize it in the `sv2-ui` backend or shared monitoring layer first.
 
 If a future image exposes new monitoring data that older images do not have, treat it as an optional feature and render it only for compatible profiles.
+
+## API Type Generation
+
+TypeScript types are **auto-generated from the shared OpenAPI spec** (`shared/openapi.json`), not manually maintained.
+
+### File Structure
+
+| File | Purpose |
+|------|---------|
+| `src/types/api-generated.ts` | **AUTO-GENERATED** - Types from OpenAPI spec. Do not edit manually. |
+| `src/types/api.ts` | Re-exports generated types + manual app-specific types |
+
+### Generating Types
+
+```bash
+npm run generate:types
+```
+
+Regenerate after updating `shared/openapi.json` from upstream.
+
