@@ -12,6 +12,12 @@ const UNKNOWN_USER_REGEX =
 const JDC_BITCOIN_CORE_DISCONNECTED_REGEX =
   /Failed to (create BitcoinCoreToSv2|get response): (CannotConnectToUnixSocket|CapnpError\(Error \{ kind: Disconnected|Disconnected: Peer disconnected)/;
 
+const JDC_BITCOIN_CORE_IBD_HINT_REGEX =
+  /Is the Bitcoin node undergoing IBD\?/;
+
+const JDC_BITCOIN_CORE_IBD_CONTEXT_REGEX =
+  /(Waiting for initial template and prevhash from Template Provider|Is the Bitcoin node undergoing IBD\?)/;
+
 const JDC_BITCOIN_CORE_UNSUPPORTED_MINING_INTERFACE_REGEX =
   /(Old mining interface \(@[^)]+\) not supported\. Please update your client!|Failed to create BitcoinCoreToSv2: CapnpError\(Error \{ kind: Unimplemented, extra: "remote exception: Method not implemented\.; interfaceName = capnp\/init\.capnp:Init; typeId = \d+; methodId = \d+" \}\))/;
 
@@ -82,6 +88,47 @@ export function jdcBitcoinCoreDisconnectedParser(
     streamId: 'mining-services',
     containers: ['jdc'],
     detectedAt: matches[0].timestamp,
+    evidence,
+  };
+}
+
+export function jdcBitcoinCoreInitialBlockDownloadParser(
+  lines: ContainerLogLine[]
+): LogDiagnostic | null {
+  const ibdMatches = lines.filter(
+    ({ container, message }) =>
+      container === 'jdc' && JDC_BITCOIN_CORE_IBD_HINT_REGEX.test(message)
+  );
+
+  if (ibdMatches.length === 0) {
+    return null;
+  }
+
+  const matches = lines.filter(
+    ({ container, message }) =>
+      container === 'jdc' && JDC_BITCOIN_CORE_IBD_CONTEXT_REGEX.test(message)
+  );
+
+  const evidence: DiagnosticEvidence[] = matches.map(
+    ({ container, stream, timestamp, raw }) => ({
+      container,
+      stream,
+      timestamp,
+      line: raw,
+    })
+  );
+
+  return {
+    code: 'jdc-bitcoin-core-initial-block-download',
+    severity: 'error' as DiagnosticSeverity,
+    title: 'Bitcoin Core is still syncing',
+    message:
+      'Your Bitcoin Core node is in initial block download, so it cannot provide block templates yet.',
+    recommendation:
+      'Wait until Bitcoin Core finishes syncing, then restart the mining services.',
+    streamId: 'mining-services',
+    containers: ['jdc'],
+    detectedAt: ibdMatches[0].timestamp,
     evidence,
   };
 }
@@ -161,6 +208,10 @@ function invalidCertificateParser(lines: ContainerLogLine[]): LogDiagnostic | nu
 export const logParsers: LogParser[] = [
   { code: 'unknown-user', match: unknownUserParser },
   { code: 'jdc-bitcoin-core-disconnected', match: jdcBitcoinCoreDisconnectedParser },
+  {
+    code: 'jdc-bitcoin-core-initial-block-download',
+    match: jdcBitcoinCoreInitialBlockDownloadParser,
+  },
   {
     code: 'jdc-bitcoin-core-unsupported-mining-interface',
     match: jdcBitcoinCoreUnsupportedMiningInterfaceParser,

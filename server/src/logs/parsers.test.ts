@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   unknownUserParser,
   jdcBitcoinCoreDisconnectedParser,
+  jdcBitcoinCoreInitialBlockDownloadParser,
   jdcBitcoinCoreUnsupportedMiningInterfaceParser,
 } from './parsers.js';
 import { collectDiagnostics } from './parsers.js';
@@ -168,6 +169,54 @@ test('jdcBitcoinCoreDisconnectedParser collects multiple matches', () => {
   assert.equal(result?.evidence.length, 2);
 });
 
+test('jdcBitcoinCoreInitialBlockDownloadParser matches IBD warning', () => {
+  const lines = [
+    createLogLine(
+      'jdc',
+      'WARN jd_client_sv2::channel_manager: Waiting for initial template and prevhash from Template Provider...'
+    ),
+    createLogLine(
+      'jdc',
+      'WARN jd_client_sv2::channel_manager: Is the Bitcoin node undergoing IBD?'
+    ),
+  ];
+
+  const result = jdcBitcoinCoreInitialBlockDownloadParser(lines);
+
+  assert.ok(result !== null);
+  assert.equal(result?.code, 'jdc-bitcoin-core-initial-block-download');
+  assert.equal(result?.severity, 'error');
+  assert.equal(result?.title, 'Bitcoin Core is still syncing');
+  assert.deepEqual(result?.containers, ['jdc']);
+  assert.equal(result?.evidence.length, 2);
+});
+
+test('jdcBitcoinCoreInitialBlockDownloadParser requires explicit IBD hint', () => {
+  const lines = [
+    createLogLine(
+      'jdc',
+      'WARN jd_client_sv2::channel_manager: Waiting for initial template and prevhash from Template Provider...'
+    ),
+  ];
+
+  const result = jdcBitcoinCoreInitialBlockDownloadParser(lines);
+
+  assert.equal(result, null);
+});
+
+test('jdcBitcoinCoreInitialBlockDownloadParser returns null when wrong container', () => {
+  const lines = [
+    createLogLine(
+      'translator',
+      'WARN jd_client_sv2::channel_manager: Is the Bitcoin node undergoing IBD?'
+    ),
+  ];
+
+  const result = jdcBitcoinCoreInitialBlockDownloadParser(lines);
+
+  assert.equal(result, null);
+});
+
 test('jdcBitcoinCoreUnsupportedMiningInterfaceParser matches old mining interface error', () => {
   const lines = [
     createLogLine(
@@ -244,6 +293,28 @@ test('collectDiagnostics includes Bitcoin Core version mismatch diagnostics', ()
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, 'jdc-bitcoin-core-unsupported-mining-interface');
   assert.equal(diagnostics[0]?.message, 'The Bitcoin Core version selected in setup does not match the node that is running.');
+});
+
+test('collectDiagnostics includes Bitcoin Core IBD diagnostics', () => {
+  const lines = [
+    createLogLine(
+      'jdc',
+      'WARN jd_client_sv2::channel_manager: Waiting for initial template and prevhash from Template Provider...'
+    ),
+    createLogLine(
+      'jdc',
+      'WARN jd_client_sv2::channel_manager: Is the Bitcoin node undergoing IBD?'
+    ),
+  ];
+
+  const diagnostics = collectDiagnostics(lines);
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, 'jdc-bitcoin-core-initial-block-download');
+  assert.equal(
+    diagnostics[0]?.message,
+    'Your Bitcoin Core node is in initial block download, so it cannot provide block templates yet.'
+  );
 });
 
 test('invalidCertificateParser: detects InvalidCertificate in translator', () => {
