@@ -6,3 +6,10 @@ export type BitcoinCoreVersion = '30.2' | '31.0';
 export type BitcoinNetwork = 'mainnet' | 'testnet4';
 
 export type HealthStatus = 'healthy' | 'unhealthy' | 'starting' | 'stopped';
+
+export interface PoolConfig {
+  name: string;
+  address: string;
+  port: number;
+  authority_public_key: string;
+}
