@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { isSupportedBitcoinCoreVersion } from '@sv2-ui/shared';
+import type { BitcoinNetwork } from '@sv2-ui/shared';
 
 export interface BitcoinRpcDiscoveryResult {
   valid: true;
   dataDir: string;
-  network: 'mainnet' | 'testnet4';
+  network: BitcoinNetwork;
   chain: string;
   version: number;
   initialBlockDownload: boolean;
