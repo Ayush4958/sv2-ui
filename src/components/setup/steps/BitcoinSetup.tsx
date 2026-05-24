@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   DEFAULT_BITCOIN_PATHS,
   SUPPORTED_BITCOIN_CORE_VERSIONS,
   computeDefaultSocketPath,
   rpcVersionToCoreVersion,
+  inferOsFromDataDir,
 } from '@sv2-ui/shared';
 import type { BitcoinCoreVersion, OperatingSystem, BitcoinNetwork } from '@sv2-ui/shared';
 import { BITCOIN_MESSAGES } from '@/lib/messages';
@@ -26,6 +27,8 @@ export function BitcoinSetup({ data, updateData, onNext, notice, onDismissNotice
   const [manualSocketPath, setManualSocketPath] = useState(data.bitcoin?.socket_path || '');
   const [isEditingPath, setIsEditingPath] = useState(false);
   const [discoveryApplied, setDiscoveryApplied] = useState(false);
+  const osPrefilled = useRef(Boolean(data.bitcoin?.os));
+  const [showAllOsOptions, setShowAllOsOptions] = useState(false);
   const dataDir = customDataDir.trim() || DEFAULT_BITCOIN_PATHS[os];
   const computedSocketPath = computeDefaultSocketPath(dataDir, network);
   const socketPath = manualSocketPath || computedSocketPath;
@@ -33,12 +36,11 @@ export function BitcoinSetup({ data, updateData, onNext, notice, onDismissNotice
   useEffect(() => {
     if (discoveredNodes && discoveredNodes.length > 0 && !discoveryApplied) {
       const primary = discoveredNodes.find(n => n.network === 'mainnet') ?? discoveredNodes[0];
-      const inferredOs: OperatingSystem = primary.dataDir.includes('Library/Application Support')
-        ? 'macos'
-        : 'linux';
       const detectedVersion = rpcVersionToCoreVersion(primary.version);
 
-      setOs(inferredOs);
+      if (!osPrefilled.current) {
+        setOs(inferOsFromDataDir(primary.dataDir));
+      }
       setNetwork(primary.network);
       if (detectedVersion) {
         setCoreVersion(detectedVersion);
@@ -107,31 +109,48 @@ export function BitcoinSetup({ data, updateData, onNext, notice, onDismissNotice
 
       <div role="group" aria-labelledby="os-label">
         <p id="os-label" className="block text-sm font-medium mb-3">Operating System</p>
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => { setOs('linux'); resetPath(); }}
-            className={selBtn(os === 'linux')}
-            aria-pressed={os === 'linux'}
-          >
-            {os === 'linux' && <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-primary flex items-center justify-center" aria-hidden="true"><Check className="w-3 h-3 text-background" /></div>}
-            <Terminal className="h-5 w-5" aria-hidden="true" />
-            <span className={`font-medium text-sm ${os === 'linux' ? 'text-primary' : ''}`}>Linux</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setOs('macos'); resetPath(); }}
-            className={selBtn(os === 'macos')}
-            aria-pressed={os === 'macos'}
-          >
-            {os === 'macos' && <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-primary flex items-center justify-center" aria-hidden="true"><Check className="w-3 h-3 text-background" /></div>}
-            <Apple className="h-5 w-5" aria-hidden="true" />
-            <span className={`font-medium text-sm ${os === 'macos' ? 'text-primary' : ''}`}>macOS</span>
-          </button>
+        <div className={`grid gap-3 ${osPrefilled.current && !showAllOsOptions ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {(osPrefilled.current && !showAllOsOptions ? os === 'linux' : true) && (
+            <button
+              type="button"
+              onClick={() => { setOs('linux'); resetPath(); }}
+              className={selBtn(os === 'linux')}
+              aria-pressed={os === 'linux'}
+            >
+              {os === 'linux' && <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-primary flex items-center justify-center" aria-hidden="true"><Check className="w-3 h-3 text-background" /></div>}
+              <Terminal className="h-5 w-5" aria-hidden="true" />
+              <span className={`font-medium text-sm ${os === 'linux' ? 'text-primary' : ''}`}>Linux</span>
+            </button>
+          )}
+          {(osPrefilled.current && !showAllOsOptions ? os === 'macos' : true) && (
+            <button
+              type="button"
+              onClick={() => { setOs('macos'); resetPath(); }}
+              className={selBtn(os === 'macos')}
+              aria-pressed={os === 'macos'}
+            >
+              {os === 'macos' && <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-primary flex items-center justify-center" aria-hidden="true"><Check className="w-3 h-3 text-background" /></div>}
+              <Apple className="h-5 w-5" aria-hidden="true" />
+              <span className={`font-medium text-sm ${os === 'macos' ? 'text-primary' : ''}`}>macOS</span>
+            </button>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          {BITCOIN_MESSAGES.windowsOmitted}
-        </p>
+        {osPrefilled.current && !showAllOsOptions ? (
+          <p className="text-xs text-muted-foreground mt-2">
+            Operating system detected from your environment.{' '}
+            <button
+              type="button"
+              onClick={() => setShowAllOsOptions(true)}
+              className="underline hover:text-foreground cursor-pointer"
+            >
+              Wrong OS? Choose another.
+            </button>
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground mt-2">
+            {BITCOIN_MESSAGES.windowsOmitted}
+          </p>
+        )}
       </div>
 
       <div>
