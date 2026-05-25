@@ -178,6 +178,14 @@ export function SetupWizard() {
 
   const handleComplete = useCallback(() => navigate('/'), [navigate]);
 
+  const handleAutoAdvance = useCallback(() => {
+    const steps = computeSteps(dataRef.current);
+    const idx = steps.indexOf('bitcoin-prereq');
+    if (idx >= 0 && idx + 2 < steps.length) {
+      setCurrentStep(steps[idx + 2]);
+    }
+  }, []);
+
   const steps = computeSteps(data);
   const currentStepIndex = steps.indexOf(currentStep);
 
@@ -283,6 +291,7 @@ export function SetupWizard() {
                 discoveredNodes={discoveredNodes}
                 isDiscovering={isDiscovering}
                 onRetryDiscovery={retryDiscovery}
+                onAutoAdvance={handleAutoAdvance}
               />
             )}
             {currentStep === 'bitcoin'         && (

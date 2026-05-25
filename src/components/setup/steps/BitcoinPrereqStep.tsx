@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { StepProps, BitcoinCoreVersion } from '../types';
+import { useState, useEffect, useRef } from 'react';
+import { StepProps, BitcoinCoreVersion, BitcoinConfig, OperatingSystem } from '../types';
 import { Copy, Check, ExternalLink, Loader2, RotateCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import type { BitcoinRpcDiscoveryResult } from '@/hooks/useBitcoinRpcDiscovery';
 
@@ -14,15 +14,27 @@ function rpcVersionToCoreVersion(rpcVersion: number): BitcoinCoreVersion | null 
     : null;
 }
 
+function getDefaultDataDir(os: OperatingSystem): string {
+  return os === 'linux' ? '~/.bitcoin' : '~/Library/Application Support/Bitcoin';
+}
+
+function computeSocketPath(os: OperatingSystem, network: 'mainnet' | 'testnet4'): string {
+  const dataDir = getDefaultDataDir(os);
+  return network === 'mainnet' ? `${dataDir}/node.sock` : `${dataDir}/testnet4/node.sock`;
+}
+
 interface BitcoinPrereqStepProps extends StepProps {
   discoveredNodes: BitcoinRpcDiscoveryResult[];
   isDiscovering: boolean;
   onRetryDiscovery: () => void;
+  onAutoAdvance: () => void;
 }
 
-export function BitcoinPrereqStep({ onNext, discoveredNodes, isDiscovering, onRetryDiscovery }: BitcoinPrereqStepProps) {
+export function BitcoinPrereqStep({ onNext, discoveredNodes, isDiscovering, onRetryDiscovery, updateData, onAutoAdvance }: BitcoinPrereqStepProps) {
   const [copiedMainnet, setCopiedMainnet] = useState(false);
   const [copiedTestnet, setCopiedTestnet] = useState(false);
+  const [ipcStatus, setIpcStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+  const ipcCompletedRef = useRef(false);
 
   const copy = async (text: string, which: 'mainnet' | 'testnet') => {
     try {
@@ -39,6 +51,72 @@ export function BitcoinPrereqStep({ onNext, discoveredNodes, isDiscovering, onRe
     }
   };
 
+  useEffect(() => {
+    if (ipcCompletedRef.current) return;
+    if (isDiscovering) return;
+
+    if (discoveredNodes.length !== 1) {
+      setIpcStatus('idle');
+      return;
+    }
+
+    const node = discoveredNodes[0];
+    const version = rpcVersionToCoreVersion(node.version);
+    if (!version || node.initialBlockDownload) {
+      setIpcStatus('idle');
+      return;
+    }
+
+    const os: OperatingSystem = node.dataDir.includes('Library/Application Support')
+      ? 'macos'
+      : 'linux';
+    const socketPath = computeSocketPath(os, node.network);
+
+    setIpcStatus('checking');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+    fetch('/api/validate/bitcoin-socket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ socket_path: socketPath, network: node.network }),
+      signal: controller.signal,
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        clearTimeout(timeoutId);
+        if (data?.valid === true) {
+          updateData({
+            bitcoin: {
+              core_version: version,
+              os,
+              network: node.network,
+              customDataDir: '',
+              socket_path: socketPath,
+              discoveredLogPath: node.logpath,
+            } as BitcoinConfig,
+          });
+          setIpcStatus('valid');
+          ipcCompletedRef.current = true;
+          setTimeout(() => onAutoAdvance(), 1500);
+        } else {
+          setIpcStatus('invalid');
+          ipcCompletedRef.current = true;
+        }
+      })
+      .catch(() => {
+        clearTimeout(timeoutId);
+        setIpcStatus('invalid');
+        ipcCompletedRef.current = true;
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [discoveredNodes, isDiscovering, updateData, onAutoAdvance]);
+
   const mainnetCmd = 'bitcoin -m node -ipcbind=unix';
   const testnetCmd = 'bitcoin -m node -ipcbind=unix -testnet4';
 
@@ -47,6 +125,12 @@ export function BitcoinPrereqStep({ onNext, discoveredNodes, isDiscovering, onRe
   const isSyncing = hasDiscovered && discoveredNodes.some(n => n.initialBlockDownload);
   const detectedCoreVersion = primaryNode ? rpcVersionToCoreVersion(primaryNode.version) : null;
   const isUnsupportedVersion = hasDiscovered && !detectedCoreVersion;
+  const autoSocketPath = hasDiscovered && primaryNode
+    ? computeSocketPath(
+      primaryNode.dataDir.includes('Library/Application Support') ? 'macos' : 'linux',
+      primaryNode.network,
+    )
+    : '';
 
   return (
     <div className="space-y-8 text-center">
@@ -226,6 +310,49 @@ export function BitcoinPrereqStep({ onNext, discoveredNodes, isDiscovering, onRe
         </div>
       )}
 
+      {ipcStatus === 'checking' && (
+        <div
+          className="p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground flex gap-3 items-center justify-center"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" aria-hidden="true" />
+          <span>Verifying IPC socket...</span>
+        </div>
+      )}
+
+      {ipcStatus === 'valid' && (
+        <div
+          className="p-3 rounded-lg bg-success/10 border border-success/20 text-sm text-success flex gap-3 items-start"
+          role="status"
+          aria-live="polite"
+        >
+          <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="text-left">
+            <span className="font-medium">IPC socket verified — proceeding automatically...</span>
+            <p className="text-xs mt-1 opacity-80">
+              Socket at {autoSocketPath} is listening
+            </p>
+          </div>
+        </div>
+      )}
+
+      {ipcStatus === 'invalid' && (
+        <div
+          className="p-3 rounded-lg bg-warning/[0.08] border border-warning/20 text-sm text-warning flex gap-3 items-start"
+          role="alert"
+          aria-live="assertive"
+        >
+          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="text-left">
+            <span className="font-medium">Bitcoin Core RPC detected but IPC socket not found</span>
+            <p className="text-xs mt-1 opacity-80">
+              The IPC socket was not found at the expected path. Continue to configure the connection manually.
+            </p>
+          </div>
+        </div>
+      )}
+
       {!isDiscovering && !hasDiscovered && (
         <div
           className="p-3 rounded-lg bg-warning/[0.08] border border-warning/20 text-sm text-warning flex gap-3 items-start"
@@ -252,7 +379,7 @@ export function BitcoinPrereqStep({ onNext, discoveredNodes, isDiscovering, onRe
         <button
           type="button"
           onClick={onNext}
-          disabled={isDiscovering || isSyncing || isUnsupportedVersion}
+          disabled={isDiscovering || isSyncing || isUnsupportedVersion || ipcStatus === 'checking'}
           className="h-11 px-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Configure Connection
