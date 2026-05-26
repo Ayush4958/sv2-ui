@@ -187,6 +187,29 @@ export type BitcoinRpcDiscoveryResult = {
   error?: string;
 };
 
+export type BitcoinRpcProbeTransport = {
+  name: string;
+  host: string;
+  networkMode: 'host' | 'bridge';
+  extraHosts?: string[];
+};
+
+export function getBitcoinRpcProbeTransports(): BitcoinRpcProbeTransport[] {
+  return [
+    {
+      name: 'host-loopback',
+      host: '127.0.0.1',
+      networkMode: 'host',
+    },
+    {
+      name: 'docker-host-gateway',
+      host: 'host.docker.internal',
+      networkMode: 'bridge',
+      extraHosts: ['host.docker.internal:host-gateway'],
+    },
+  ];
+}
+
 export async function autoDiscoverBitcoinRpc(): Promise<BitcoinRpcDiscoveryResult[]> {
   const osPaths = [
     expandHomePath('~/.bitcoin'),
@@ -284,76 +307,36 @@ export async function probeBitcoinRpcWithDocker(
   try {
     await pullImage("node:20-bookworm-slim");
 
-    let container: Docker.Container | null = null;
+    const errors: string[] = [];
 
-    try {
-      container = await docker.createContainer({
-        Image: 'node:20-bookworm-slim',
-        Entrypoint: ['node'],
-        Cmd: ['-e', bitcoinRpcValidatorScript, containerDataDir, network, 'host.docker.internal', String(rpcPort)],
-        AttachStdout: true,
-        AttachStderr: true,
-        HostConfig: {
-          Mounts: [
-            {
-              Type: "bind",
-              Source: dataDir,
-              Target: containerDataDir,
-              ReadOnly: true
-            }
-          ],
-          ExtraHosts: ['host.docker.internal:host-gateway'],
-          NetworkMode: 'host',
-          RestartPolicy: { Name: 'no' },
-        },
-      });
+    for (const transport of getBitcoinRpcProbeTransports()) {
+      try {
+        const result = await runBitcoinRpcProbeContainer({
+          dataDir,
+          network,
+          rpcPort,
+          containerDataDir,
+          transport,
+        });
 
-      await container.start();
-      const result = await container.wait();
-
-      if (result.StatusCode === 0) {
-        const rawLogs = await container.logs({ stdout: true, stderr: false });
-        const output = demuxDockerLogBuffer(Buffer.isBuffer(rawLogs) ? rawLogs : Buffer.from(rawLogs))
-          .map((chunk) => chunk.payload.trim())
-          .filter(Boolean)
-          .join('\n');
-
-        try {
-          const parsed = JSON.parse(output);
-          return {
-            valid: true,
-            chain: parsed.chain,
-            version: parsed.version,
-            initialBlockDownload: parsed.initialblockdownload,
-            logpath: parsed.logpath,
-          };
-        } catch {
-          return {
-            valid: false,
-            error: `Failed to parse RPC validation output: ${output}`,
-          };
+        if (result.valid) {
+          return result;
         }
-      }
 
-      const rawLogs = await container.logs({ stdout: true, stderr: true });
-      const message = demuxDockerLogBuffer(Buffer.isBuffer(rawLogs) ? rawLogs : Buffer.from(rawLogs))
-        .map((chunk) => chunk.payload.trim())
-        .filter(Boolean)
-        .join('\n');
-
-      return {
-        valid: false,
-        error: message || `RPC validation failed for port ${rpcPort}`,
-      };
-    } finally {
-      if (container) {
-        try {
-          await container.remove({ force: true });
-        } catch {
-          // cleanup failure is non-fatal
+        errors.push(`${transport.name}: ${result.error}`);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('bind source path does not exist')) {
+          throw error;
         }
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${transport.name}: ${message}`);
       }
     }
+
+    return {
+      valid: false,
+      error: errors.join('\n') || `RPC validation failed for port ${rpcPort}`,
+    };
   } catch (error) {
     if (error instanceof Error && error.message.includes('bind source path does not exist')) {
       throw error;
@@ -363,6 +346,91 @@ export async function probeBitcoinRpcWithDocker(
       valid: false,
       error: `Failed to validate RPC connection: ${message}`,
     };
+  }
+}
+
+async function runBitcoinRpcProbeContainer({
+  dataDir,
+  network,
+  rpcPort,
+  containerDataDir,
+  transport,
+}: {
+  dataDir: string;
+  network: 'mainnet' | 'testnet4';
+  rpcPort: number;
+  containerDataDir: string;
+  transport: BitcoinRpcProbeTransport;
+}): Promise<BitcoinRpcValidationResult> {
+  let container: Docker.Container | null = null;
+
+  try {
+    container = await docker.createContainer({
+      Image: 'node:20-bookworm-slim',
+      Entrypoint: ['node'],
+      Cmd: ['-e', bitcoinRpcValidatorScript, containerDataDir, network, transport.host, String(rpcPort)],
+      AttachStdout: true,
+      AttachStderr: true,
+      HostConfig: {
+        Mounts: [
+          {
+            Type: "bind",
+            Source: dataDir,
+            Target: containerDataDir,
+            ReadOnly: true
+          }
+        ],
+        ...(transport.extraHosts ? { ExtraHosts: transport.extraHosts } : {}),
+        NetworkMode: transport.networkMode,
+        RestartPolicy: { Name: 'no' },
+      },
+    });
+
+    await container.start();
+    const result = await container.wait();
+
+    if (result.StatusCode === 0) {
+      const rawLogs = await container.logs({ stdout: true, stderr: false });
+      const output = demuxDockerLogBuffer(Buffer.isBuffer(rawLogs) ? rawLogs : Buffer.from(rawLogs))
+        .map((chunk) => chunk.payload.trim())
+        .filter(Boolean)
+        .join('\n');
+
+      try {
+        const parsed = JSON.parse(output);
+        return {
+          valid: true,
+          chain: parsed.chain,
+          version: parsed.version,
+          initialBlockDownload: parsed.initialblockdownload,
+          logpath: parsed.logpath,
+        };
+      } catch {
+        return {
+          valid: false,
+          error: `Failed to parse RPC validation output: ${output}`,
+        };
+      }
+    }
+
+    const rawLogs = await container.logs({ stdout: true, stderr: true });
+    const message = demuxDockerLogBuffer(Buffer.isBuffer(rawLogs) ? rawLogs : Buffer.from(rawLogs))
+      .map((chunk) => chunk.payload.trim())
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      valid: false,
+      error: message || `RPC validation failed for port ${rpcPort}`,
+    };
+  } finally {
+    if (container) {
+      try {
+        await container.remove({ force: true });
+      } catch {
+        // cleanup failure is non-fatal
+      }
+    }
   }
 }
 
