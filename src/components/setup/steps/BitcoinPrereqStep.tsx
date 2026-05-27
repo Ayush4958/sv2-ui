@@ -1,19 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { rpcVersionToCoreVersion, type OperatingSystem } from '@sv2-ui/shared';
+import { rpcVersionToCoreVersion, DEFAULT_BITCOIN_PATHS, computeDefaultSocketPath, type OperatingSystem } from '@sv2-ui/shared';
 import { BITCOIN_MESSAGES } from '@/lib/messages';
 import { StepProps } from '../types';
 import { Copy, Check, ExternalLink, Loader2, RotateCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import type { BitcoinRpcDiscoveryResult } from '@/hooks/useBitcoinRpcDiscovery';
 import type { BitcoinConfig } from '../types';
-
-function getDefaultDataDir(os: OperatingSystem): string {
-  return os === 'linux' ? '~/.bitcoin' : '~/Library/Application Support/Bitcoin';
-}
-
-function computeSocketPath(os: OperatingSystem, network: 'mainnet' | 'testnet4'): string {
-  const dataDir = getDefaultDataDir(os);
-  return network === 'mainnet' ? `${dataDir}/node.sock` : `${dataDir}/testnet4/node.sock`;
-}
 
 interface BitcoinPrereqStepProps extends StepProps {
   discoveredNodes: BitcoinRpcDiscoveryResult[];
@@ -62,7 +53,7 @@ export function BitcoinPrereqStep({ onNext, discoveredNodes, isDiscovering, onRe
     const os: OperatingSystem = node.dataDir.includes('Library/Application Support')
       ? 'macos'
       : 'linux';
-    const socketPath = computeSocketPath(os, node.network);
+    const socketPath = computeDefaultSocketPath(DEFAULT_BITCOIN_PATHS[os], node.network);
 
     setIpcStatus('checking');
 
@@ -118,8 +109,10 @@ export function BitcoinPrereqStep({ onNext, discoveredNodes, isDiscovering, onRe
   const detectedCoreVersion = primaryNode ? rpcVersionToCoreVersion(primaryNode.version) : null;
   const isUnsupportedVersion = hasDiscovered && !detectedCoreVersion;
   const autoSocketPath = hasDiscovered && primaryNode
-    ? computeSocketPath(
-      primaryNode.dataDir.includes('Library/Application Support') ? 'macos' : 'linux',
+    ? computeDefaultSocketPath(
+      DEFAULT_BITCOIN_PATHS[
+        primaryNode.dataDir.includes('Library/Application Support') ? 'macos' : 'linux'
+      ],
       primaryNode.network,
     )
     : '';
