@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 
 import type { SetupData, StatusResponse, SetupResponse } from './types.js';
 import { generateTranslatorConfig, generateJdcConfig, normalizeSetupData } from './config-generator.js';
-import { isSupportedBitcoinCoreVersion } from '@sv2-ui/shared';
+import { isSupportedBitcoinCoreVersion, TRANSLATOR_MONITORING_PORT, JDC_MONITORING_PORT } from '@sv2-ui/shared';
 import { BITCOIN_ERROR_MESSAGES } from './messages.js';
 import {
   startStack,
@@ -512,7 +512,7 @@ function getContainerUrl(containerName: string, port: number): string {
  * /translator-api/v1/global -> http://sv2-translator:9092/api/v1/global
  */
 app.use('/translator-api', async (req, res) => {
-  const targetUrl = `${getContainerUrl('sv2-translator', 9092)}/api${req.url}`;
+  const targetUrl = `${getContainerUrl('sv2-translator', TRANSLATOR_MONITORING_PORT)}/api${req.url}`;
   try {
     const response = await fetch(targetUrl, {
       method: req.method,
@@ -531,7 +531,7 @@ app.use('/translator-api', async (req, res) => {
  * /jdc-api/v1/global -> http://sv2-jdc:9091/api/v1/global
  */
 app.use('/jdc-api', async (req, res) => {
-  const targetUrl = `${getContainerUrl('sv2-jdc', 9091)}/api${req.url}`;
+  const targetUrl = `${getContainerUrl('sv2-jdc', JDC_MONITORING_PORT)}/api${req.url}`;
   try {
     const response = await fetch(targetUrl, {
       method: req.method,

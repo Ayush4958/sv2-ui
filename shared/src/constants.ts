@@ -33,6 +33,13 @@ export const TRANSLATOR_PORT = 34255;
 export const JDC_PORT = 34265;
 export const JDC_AUTHORITY_PUBLIC_KEY = '9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72';
 
+export const TRANSLATOR_MONITORING_PORT = 9092;
+export const JDC_MONITORING_PORT = 9091;
+
+export const DEFAULT_SHARES_PER_MINUTE = 6;
+export const DEFAULT_DOWNSTREAM_EXTRANONCE2_SIZE = 4;
+export const DEFAULT_POOL_PORT = 34254;
+
 export function computeDefaultSocketPath(dataDir: string, network: BitcoinNetwork): string {
   return network === 'mainnet' ? `${dataDir}/node.sock` : `${dataDir}/${network}/node.sock`;
 }

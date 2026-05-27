@@ -8,11 +8,10 @@ import {
   JDC_PORT,
   TRANSLATOR_PORT,
   shouldAggregateTranslatorChannels,
+  DEFAULT_SHARES_PER_MINUTE,
+  DEFAULT_DOWNSTREAM_EXTRANONCE2_SIZE,
 } from '@sv2-ui/shared';
 import type { SetupData } from './types.js';
-
-const DEFAULT_SHARES_PER_MINUTE = 6;
-const DEFAULT_DOWNSTREAM_EXTRANONCE2_SIZE = 4;
 
 function positiveNumber(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
