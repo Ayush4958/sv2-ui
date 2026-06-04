@@ -122,19 +122,47 @@ export function UnifiedDashboard() {
   const diagnostics = logDiagnostics?.diagnostics ?? [];
 
   const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   const handleStartMining = async () => {
     setIsStarting(true);
+    setStartError(null);
     try {
-      const response = await fetch('/api/restart', { method: 'POST' });
-      if (response.ok) {
-        // Give containers time to start, then refresh health checks
-        setTimeout(() => {
-          window.location.reload();
-        }, 3000);
+      const response = await fetch('/api/restart', {
+        method: 'POST',
+        signal: AbortSignal.timeout(300_000),
+      });
+      const responseData = await response.json().catch(() => ({})) as {
+        error?: string;
+        message?: string;
+        success?: boolean;
+      };
+
+      if (!response.ok || responseData.success === false) {
+        throw new Error(
+          responseData.error ||
+          responseData.message ||
+          `Failed to start mining (${response.status})`
+        );
       }
+
+      // Give containers time to start, then refresh health checks.
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
     } catch (error) {
       console.error('Failed to start mining:', error);
+      if (error instanceof Error) {
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+          setStartError('Request timed out. The containers may still be starting.');
+        } else if (error.message.includes('fetch') || error.message.includes('Network')) {
+          setStartError('Cannot reach the server. Make sure the backend is running.');
+        } else {
+          setStartError(error.message);
+        }
+      } else {
+        setStartError('Failed to start mining.');
+      }
       setIsStarting(false);
     }
   };
@@ -467,7 +495,7 @@ export function UnifiedDashboard() {
 
       {/* Start Mining Banner (configured but stopped) */}
       {configuredButStopped && showError && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/10 px-5 py-4 text-sm">
+        <div className="flex flex-col gap-3 rounded-xl border border-primary/40 bg-primary/10 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <Play className="h-4 w-4 shrink-0 text-primary" />
             <span>Mining services are stopped.</span>
@@ -475,7 +503,7 @@ export function UnifiedDashboard() {
           <button
             onClick={handleStartMining}
             disabled={isStarting}
-            className="h-9 px-4 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors font-medium flex items-center gap-2"
+            className="flex h-9 items-center gap-2 self-start rounded-full bg-primary px-4 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 sm:self-auto"
           >
             {isStarting ? (
               <>
@@ -490,11 +518,11 @@ export function UnifiedDashboard() {
       )}
 
       {/* Connection Error Banner (not configured or unknown error) */}
-      {showError && !configuredButStopped && diagnostics.length === 0 && (
+      {(startError || (showError && !configuredButStopped && diagnostics.length === 0)) && (
         <div className="flex items-center gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-5 py-4 text-sm text-red-500">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>
-            Cannot connect to pool. Make sure mining services are running.
+            {startError || 'Cannot connect to pool. Make sure mining services are running.'}
           </span>
         </div>
       )}
