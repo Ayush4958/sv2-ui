@@ -151,7 +151,7 @@ app.get('/api/config', async (_req, res) => {
  * GET /api/env - Host environment variables relevant to the UI
  */
 app.get('/api/env', (_req, res) => {
-  res.json({ HOST_OS: process.env.HOST_OS || null });
+  res.json({ HOST_OS: process.env.HOST_OS || null, STRATUM_HOST: process.env.STRATUM_HOST || null });
 });
 
 /**
