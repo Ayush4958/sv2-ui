@@ -13,6 +13,7 @@ export interface StatusResponse {
   configured: boolean;
   running: boolean;
   autoStarting?: boolean;
+  shouldBeRunning?: boolean;
   miningMode: MiningMode | null;
   mode: SetupMode | null;
   poolName: string | null;

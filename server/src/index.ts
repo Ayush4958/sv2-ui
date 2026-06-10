@@ -36,7 +36,17 @@ const PORT = process.env.PORT || 3001;
 const CONFIG_DIR = process.env.CONFIG_DIR || path.join(__dirname, '../../data/config');
 const STATE_FILE = path.join(CONFIG_DIR, 'state.json');
 
+const AUTO_START_RETRY_INTERVAL_MS = 30_000;
+
 let isAutoStarting = false;
+
+type SavedState = {
+  configured: boolean;
+  miningMode: 'solo' | 'pool' | null;
+  mode: 'jd' | 'no-jd' | null;
+  data: SetupData | null;
+  shouldBeRunning: boolean;
+};
 
 // Middleware
 app.use(cors());
@@ -53,25 +63,41 @@ app.use(express.static(UI_DIR));
 /**
  * Load saved state
  */
-async function loadState(): Promise<{ configured: boolean; miningMode: 'solo' | 'pool' | null; mode: 'jd' | 'no-jd' | null; data: SetupData | null }> {
+function getDefaultState(): SavedState {
+  return { configured: false, miningMode: null, mode: null, data: null, shouldBeRunning: false };
+}
+
+function normalizeSavedState(state: Partial<SavedState>): SavedState {
+  const configured = state.configured ?? false;
+  return {
+    configured,
+    miningMode: state.miningMode ?? null,
+    mode: state.mode ?? null,
+    data: state.data ?? null,
+    shouldBeRunning: state.shouldBeRunning ?? configured,
+  };
+}
+
+async function loadState(): Promise<SavedState> {
   try {
     const content = await fs.readFile(STATE_FILE, 'utf-8');
-    return JSON.parse(content);
+    return normalizeSavedState(JSON.parse(content) as Partial<SavedState>);
   } catch {
-    return { configured: false, miningMode: null, mode: null, data: null };
+    return getDefaultState();
   }
 }
 
 /**
  * Save state
  */
-async function saveState(data: SetupData): Promise<void> {
+async function saveState(data: SetupData, shouldBeRunning = true): Promise<void> {
   await fs.mkdir(CONFIG_DIR, { recursive: true });
   await fs.writeFile(STATE_FILE, JSON.stringify({
     configured: true,
     miningMode: data.miningMode,
     mode: data.mode,
     data,
+    shouldBeRunning,
   }, null, 2));
 }
 
@@ -85,6 +111,22 @@ function getBitcoinCoreVersionError(data: SetupData): string | null {
   }
 
   return null;
+}
+
+function isStackRunning(
+  mode: SavedState['mode'],
+  containers: StatusResponse['containers']
+): boolean {
+  const healthyOrStarting = (status: string | undefined) =>
+    status === 'healthy' || status === 'starting';
+
+  return mode === 'jd'
+    ? healthyOrStarting(containers.translator?.status) && healthyOrStarting(containers.jdc?.status)
+    : healthyOrStarting(containers.translator?.status);
+}
+
+function autoStartBusyResponse() {
+  return { success: false, error: 'Mining services are already starting. Please wait.' };
 }
 
 /**
@@ -106,15 +148,11 @@ app.get('/api/status', async (_req, res) => {
     const state = await loadState();
     const containers = await getStackStatus(state.mode);
 
-    const running = state.mode === 'jd'
-      ? (containers.translator?.status === 'healthy' || containers.translator?.status === 'starting') &&
-      (containers.jdc?.status === 'healthy' || containers.jdc?.status === 'starting')
-      : (containers.translator?.status === 'healthy' || containers.translator?.status === 'starting');
-
     const response: StatusResponse = {
       configured: state.configured,
-      running,
+      running: isStackRunning(state.mode, containers),
       autoStarting: isAutoStarting,
+      shouldBeRunning: state.shouldBeRunning,
       miningMode: state.miningMode,
       mode: state.mode,
       poolName: state.data?.miningMode === 'solo' && state.data?.mode === 'jd'
@@ -191,6 +229,10 @@ async function getBitcoinSocketStartupError(data: SetupData): Promise<string | n
  */
 app.put('/api/config', async (req, res) => {
   try {
+    if (isAutoStarting) {
+      return res.status(409).json(autoStartBusyResponse());
+    }
+
     const state = await loadState();
 
     if (!state.configured || !state.data) {
@@ -342,6 +384,10 @@ app.get('/api/logs/raw', async (req, res) => {
  */
 app.post('/api/setup', async (req, res) => {
   try {
+    if (isAutoStarting) {
+      return res.status(409).json(autoStartBusyResponse());
+    }
+
     const data = normalizeSetupData(req.body as SetupData);
     const requiresPool = !(data.miningMode === 'solo' && data.mode === 'jd');
 
@@ -432,7 +478,14 @@ app.post('/api/setup', async (req, res) => {
  */
 app.post('/api/stop', async (_req, res) => {
   try {
+    if (isAutoStarting) {
+      return res.status(409).json(autoStartBusyResponse());
+    }
     await stopStack();
+
+    const state = await loadState();
+    if (state.configured && state.data) await saveState(state.data, false);
+
     res.json({ success: true });
   } catch (error) {
     console.error('Stop error:', error);
@@ -446,13 +499,15 @@ app.post('/api/stop', async (_req, res) => {
 app.post('/api/restart', async (_req, res) => {
   try {
     if (isAutoStarting) {
-      return res.status(409).json({ success: false, error: 'Mining services are already starting. Please wait.' });
+      return res.status(409).json(autoStartBusyResponse());
     }
 
     const state = await loadState();
     if (!state.configured || !state.data) {
       return res.status(400).json({ success: false, error: 'Not configured' });
     }
+
+    await saveState(state.data, true);
 
     const bitcoinCoreVersionError = getBitcoinCoreVersionError(state.data);
     if (bitcoinCoreVersionError) {
@@ -481,6 +536,10 @@ app.post('/api/restart', async (_req, res) => {
  */
 app.post('/api/reset', async (_req, res) => {
   try {
+    if (isAutoStarting) {
+      return res.status(409).json(autoStartBusyResponse());
+    }
+
     // Stop containers first
     await stopStack();
 
@@ -566,40 +625,29 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(UI_DIR, 'index.html'));
 });
 
-async function autoStartIfConfigured(): Promise<void> {
+async function reconcileShouldBeRunning(): Promise<void> {
+  if (isAutoStarting) return;
+
   isAutoStarting = true;
   try {
     const state = await loadState();
-    if (!state.configured || !state.data) {
-      console.log('Auto-start skipped: not configured');
-      return;
-    }
+    if (!state.configured || !state.data || !state.shouldBeRunning) return;
 
     const containers = await getStackStatus(state.mode);
-    const bothHealthyOrStarting = (status: string | undefined) =>
-      status === 'healthy' || status === 'starting';
-    const alreadyRunning = state.mode === 'jd'
-      ? bothHealthyOrStarting(containers.translator?.status) &&
-      bothHealthyOrStarting(containers.jdc?.status)
-      : bothHealthyOrStarting(containers.translator?.status);
+    if (isStackRunning(state.mode, containers)) return;
 
-    if (alreadyRunning) {
-      console.log('Auto-start skipped: containers already running');
-      return;
-    }
-
-    console.log('Auto-start: configured but stopped — starting containers...');
+    console.log('Auto-start: shouldBeRunning=true and stack is stopped. Starting containers...');
 
     const versionError = getBitcoinCoreVersionError(state.data);
     if (versionError) {
-      console.error('Auto-start aborted:', versionError);
+      console.error('Auto-start blocked:', versionError);
       return;
     }
 
     if (state.data.mode === 'jd') {
       const socketError = await getBitcoinSocketStartupError(state.data);
       if (socketError) {
-        console.error('Auto-start aborted:', socketError);
+        console.error('Auto-start blocked:', socketError);
         return;
       }
     }
@@ -635,8 +683,11 @@ app.listen(PORT, () => {
     console.log('');
   }
 
-  // fire-and-forget: restart the mining stack if configured but stopped
-  autoStartIfConfigured();
+  // Keep configured mining services running across app/system restarts.
+  void reconcileShouldBeRunning();
+  setInterval(() => {
+    void reconcileShouldBeRunning();
+  }, AUTO_START_RETRY_INTERVAL_MS);
 });
 
 // Graceful shutdown: stop mining containers when sv2-ui exits
