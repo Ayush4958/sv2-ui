@@ -73,6 +73,57 @@ test('translator config uses advanced setup values', () => {
   assert.match(config, /shares_per_minute = 12\.5/);
 });
 
+test('translator config keeps payout verification disabled for pool mining', () => {
+  const config = generateTranslatorConfig(BASE_DATA_30);
+
+  assert.match(config, /verify_payout = false/);
+});
+
+test('translator config enables payout verification for solo pool mining', () => {
+  const config = generateTranslatorConfig({
+    ...BASE_DATA_30,
+    miningMode: 'solo',
+    mode: 'no-jd',
+    translator: {
+      ...BASE_DATA_30.translator,
+      user_identity: 'tb1qexample',
+    },
+  });
+
+  assert.match(config, /user_identity = "tb1qexample"/);
+  assert.match(config, /verify_payout = true/);
+});
+
+test('translator config disables payout verification for full donation solo identities', () => {
+  const config = generateTranslatorConfig({
+    ...BASE_DATA_30,
+    miningMode: 'solo',
+    mode: 'no-jd',
+    translator: {
+      ...BASE_DATA_30.translator,
+      user_identity: 'sri/donate/worker1',
+    },
+  });
+
+  assert.match(config, /user_identity = "sri\/donate\/worker1"/);
+  assert.match(config, /verify_payout = false/);
+});
+
+test('translator config keeps payout verification disabled for sovereign solo mining', () => {
+  const config = generateTranslatorConfig({
+    ...BASE_DATA_30,
+    miningMode: 'solo',
+    pool: null,
+    translator: {
+      ...BASE_DATA_30.translator,
+      user_identity: 'solo_miner',
+    },
+  });
+
+  assert.match(config, /user_identity = "solo_miner"/);
+  assert.match(config, /verify_payout = false/);
+});
+
 test('jdc config uses shared shares-per-minute and miner signature', () => {
   const config = generateJdcConfig(BASE_DATA_30);
 

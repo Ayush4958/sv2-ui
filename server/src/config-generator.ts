@@ -26,6 +26,18 @@ function positiveInteger(value: number | undefined, fallback: number): number {
   return Math.max(1, Math.trunc(normalized));
 }
 
+function isFullDonationIdentity(userIdentity: string): boolean {
+  return userIdentity === 'sri/donate' || /^sri\/donate\/[^/]+$/.test(userIdentity);
+}
+
+function shouldVerifyPayout(data: SetupData): boolean {
+  if (!data.translator || data.miningMode !== 'solo' || data.mode !== 'no-jd') {
+    return false;
+  }
+
+  return !isFullDonationIdentity(data.translator.user_identity);
+}
+
 export function normalizeSetupData(data: SetupData): SetupData {
   if (!data.translator) {
     return data;
@@ -67,6 +79,7 @@ export function generateTranslatorConfig(data: SetupData): string {
   const authorityPubkey = isJdMode
     ? JDC_AUTHORITY_PUBLIC_KEY
     : pool!.authority_public_key;
+  const verifyPayout = shouldVerifyPayout(normalizedData);
 
   // Min hashrate from user config (default 100 TH/s if not set)
   const minHashrate = translator.min_hashrate ? `${translator.min_hashrate}.0` : '100_000_000_000_000.0';
@@ -92,6 +105,9 @@ min_supported_version = 2
 
 # Extranonce2 size for downstream connections
 downstream_extranonce2_size = ${downstreamExtranonce2Size}
+
+# Verify upstream coinbase outputs against the configured payout
+verify_payout = ${verifyPayout}
 
 # Aggregate channels: if true, all miners share one upstream channel
 aggregate_channels = ${translator.aggregate_channels}
