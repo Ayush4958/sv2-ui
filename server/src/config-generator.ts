@@ -14,8 +14,11 @@ import {
   DEFAULT_MIN_HASHRATE,
   bitcoinCoreVersionToIpcMajor,
   formatSupportedVersions,
+  normalizeMinerTelemetryCidr,
 } from '@sv2-ui/shared';
 import type { JdcConfig, PoolConfig, SetupData, TranslatorConfig } from './types.js';
+
+const MONITORING_CACHE_REFRESH_SECS = 5;
 
 function positiveNumber(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
@@ -96,6 +99,15 @@ function shouldVerifyPayout(data: SetupData): boolean {
     && pools.every((pool) => !isFullDonationIdentity(pool.user_identity));
 }
 
+function minerTelemetryConfig(cidr: string): string {
+  if (!cidr) return '';
+
+  return `# LAN subnet containing ASIC miner web/API addresses (for example, 192.168.1.0/24).
+[miner_telemetry]
+cidrs = ["${cidr}"]
+`;
+}
+
 export function normalizeSetupData(data: SetupData): SetupData {
   const fallbackIdentity = legacyIdentity(data);
   const pool = normalizePool(data.pool, fallbackIdentity);
@@ -119,6 +131,7 @@ export function normalizeSetupData(data: SetupData): SetupData {
     return {
       miningMode: data.miningMode,
       mode: data.mode,
+      miner_telemetry_cidr: normalizeMinerTelemetryCidr(data.miner_telemetry_cidr),
       pool,
       fallbackPools,
       bitcoin: data.bitcoin,
@@ -130,6 +143,7 @@ export function normalizeSetupData(data: SetupData): SetupData {
   return {
     miningMode: data.miningMode,
     mode: data.mode,
+    miner_telemetry_cidr: normalizeMinerTelemetryCidr(data.miner_telemetry_cidr),
     pool,
     fallbackPools,
     bitcoin: data.bitcoin,
@@ -224,8 +238,9 @@ required_extensions = []
 
 # Monitoring HTTP server address
 monitoring_address = "0.0.0.0:9092"
-monitoring_cache_refresh_secs = 15
+monitoring_cache_refresh_secs = ${MONITORING_CACHE_REFRESH_SECS}
 
+${minerTelemetryConfig(normalizedData.miner_telemetry_cidr)}
 # Difficulty params
 [downstream_difficulty_config]
 min_individual_miner_hashrate = ${minHashrate}
@@ -320,9 +335,10 @@ required_extensions = []
 
 # Monitoring HTTP server address
 monitoring_address = "0.0.0.0:9091"
-monitoring_cache_refresh_secs = 15
+monitoring_cache_refresh_secs = ${MONITORING_CACHE_REFRESH_SECS}
 
-${upstreamsConfig}# Bitcoin Core IPC config
+${upstreamsConfig}${minerTelemetryConfig(normalizedData.miner_telemetry_cidr)}
+# Bitcoin Core IPC config
 [template_provider_type.BitcoinCoreIpc]
 version = ${bitcoinCoreIpcVersion}
 network = "${bitcoin.network}"

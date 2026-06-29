@@ -6,6 +6,7 @@ import type { SetupData } from './types.js';
 const BASE_DATA_30: SetupData = {
   miningMode: 'pool',
   mode: 'jd',
+  miner_telemetry_cidr: '192.168.1.0/24',
   pool: {
     name: 'Custom Pool',
     address: 'pool.example.com',
@@ -48,6 +49,7 @@ const BASE_DATA_31_SOLO: SetupData = {
 const NO_JD_DATA: SetupData = {
   miningMode: 'pool',
   mode: 'no-jd',
+  miner_telemetry_cidr: '192.168.1.0/24',
   pool: {
     name: 'Remote Pool',
     address: 'remote.pool.com',
@@ -73,6 +75,8 @@ test('translator config uses advanced setup values', () => {
   assert.match(config, /min_individual_miner_hashrate = 100000000000000\.0/);
   assert.match(config, /downstream_extranonce2_size = 8/);
   assert.match(config, /shares_per_minute = 12\.5/);
+  assert.match(config, /monitoring_cache_refresh_secs = 5/);
+  assert.match(config, /\[miner_telemetry\]\ncidrs = \["192\.168\.1\.0\/24"\]/);
 });
 
 test('translator config omits payout verification for pool mining', () => {
@@ -151,11 +155,28 @@ test('jdc config uses shared shares-per-minute and miner signature', () => {
   assert.ok(config);
   assert.match(config, /shares_per_minute = 12\.5/);
   assert.match(config, /jdc_signature = "custom-miner-tag"/);
+  assert.match(config, /monitoring_cache_refresh_secs = 5/);
+  assert.match(config, /\[miner_telemetry\]\ncidrs = \["192\.168\.1\.0\/24"\]/);
+});
+
+test('miner telemetry config is omitted when LAN CIDR is blank', () => {
+  const data = {
+    ...BASE_DATA_30,
+    miner_telemetry_cidr: '',
+  };
+
+  const translatorConfig = generateTranslatorConfig(data);
+  const jdcConfig = generateJdcConfig(data);
+
+  assert.doesNotMatch(translatorConfig, /\[miner_telemetry\]/);
+  assert.ok(jdcConfig);
+  assert.doesNotMatch(jdcConfig, /\[miner_telemetry\]/);
 });
 
 test('normalization backfills advanced defaults for old saved configs', () => {
   const data = {
     ...BASE_DATA_30,
+    miner_telemetry_cidr: undefined,
     translator: {
       ...BASE_DATA_30.translator,
       min_hashrate: undefined,
@@ -168,6 +189,7 @@ test('normalization backfills advanced defaults for old saved configs', () => {
 
   assert.ok(normalized.translator);
   assert.equal(normalized.translator.min_hashrate, 100_000_000_000_000);
+  assert.equal(normalized.miner_telemetry_cidr, '');
   assert.equal(normalized.translator.shares_per_minute, 6);
   assert.equal(normalized.translator.downstream_extranonce2_size, 4);
   assert.equal('verify_payout' in normalized.translator, false);
@@ -326,6 +348,19 @@ test('jdc in solo mode omits user_identity entirely', () => {
   assert.ok(config);
   assert.doesNotMatch(config, /user_identity/);
   assert.match(config, /upstreams = \[\]/);
+});
+
+test('jdc in solo mode emits upstreams before miner telemetry table', () => {
+  const config = generateJdcConfig(BASE_DATA_31_SOLO);
+
+  assert.ok(config);
+
+  const upstreamsIndex = config.indexOf('upstreams = []');
+  const telemetryIndex = config.indexOf('[miner_telemetry]');
+
+  assert.notEqual(upstreamsIndex, -1);
+  assert.notEqual(telemetryIndex, -1);
+  assert.ok(upstreamsIndex < telemetryIndex);
 });
 
 test('no-jd mode: translator uses new format (user_identity inside [[upstreams]])', () => {

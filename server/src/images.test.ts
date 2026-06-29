@@ -6,6 +6,7 @@ import type { SetupData } from './types.js';
 const BASE_SETUP_DATA: SetupData = {
   miningMode: 'pool',
   mode: 'jd',
+  miner_telemetry_cidr: '192.168.1.0/24',
   pool: {
     name: 'Custom Pool',
     address: 'pool.example.com',

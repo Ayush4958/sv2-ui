@@ -126,6 +126,71 @@ export interface HealthResponse {
   timestamp: number;
 }
 
+/**
+ * Telemetry reported by the miner's management interface.
+ */
+export interface MinerTelemetry {
+  /**
+     * Average miner temperature in degrees Celsius.
+     * @nullable
+     */
+  average_temperature_c?: number | null;
+  /**
+     * Miner efficiency in joules per terahash.
+     * @nullable
+     */
+  efficiency_j_per_th?: number | null;
+  /**
+     * Firmware version reported by the miner, when exposed.
+     * @nullable
+     */
+  firmware_version?: string | null;
+  /**
+     * Whether the miner reports that hashing is currently running.
+     * @nullable
+     */
+  is_mining?: boolean | null;
+  /**
+     * Miner manufacturer or brand reported by the management interface.
+     * @nullable
+     */
+  make?: string | null;
+  /**
+     * Miner model reported by the management interface.
+     * @nullable
+     */
+  model?: string | null;
+  /**
+     * Current miner power consumption in watts.
+     * @nullable
+     */
+  power_consumption_w?: number | null;
+  /**
+     * Miner-reported hashrate in hashes per second.
+     * @nullable
+     */
+  reported_hashrate_hs?: number | null;
+  /**
+     * Total miner system uptime in seconds.
+     * @minimum 0
+     * @nullable
+     */
+  uptime_secs?: number | null;
+}
+
+/**
+ * Status of matching a connected miner to discovered management telemetry.
+ */
+export type MinerTelemetryStatus = typeof MinerTelemetryStatus[keyof typeof MinerTelemetryStatus];
+
+
+export const MinerTelemetryStatus = {
+  matched: 'matched',
+  unmatched: 'unmatched',
+  duplicate_worker_name: 'duplicate_worker_name',
+  fetch_failed: 'fetch_failed',
+} as const;
+
 export type ServerExtendedChannelInfoSharesRejectedByReason = {[key: string]: number};
 
 /**
@@ -268,11 +333,19 @@ export interface Sv1ClientInfo {
   channel_id?: number | null;
   /** @minimum 0 */
   client_id: number;
+  connection_ip: string;
   extranonce1_hex: string;
   /** @minimum 0 */
   extranonce2_len: number;
   /** @nullable */
   hashrate?: number | null;
+  /**
+     * Miner management IP used for matched telemetry, if discovery found one.
+     * @nullable
+     */
+  management_ip?: string | null;
+  miner_telemetry?: null | MinerTelemetry;
+  miner_telemetry_status?: null | MinerTelemetryStatus;
   stable_hashrate: boolean;
   target_hex: string;
   user_identity: string;
@@ -308,12 +381,33 @@ export interface Sv2ClientChannelsResponse {
 }
 
 /**
+ * Kind of SV2 downstream client connected to this node.
+ */
+export type Sv2ClientKind = typeof Sv2ClientKind[keyof typeof Sv2ClientKind];
+
+
+export const Sv2ClientKind = {
+  miner: 'miner',
+  translator_proxy: 'translator_proxy',
+  unknown: 'unknown',
+} as const;
+
+/**
  * Full information about a single Sv2 client including all channels
  */
 export interface Sv2ClientInfo {
   /** @minimum 0 */
   client_id: number;
+  /** Classification inferred from the client's SV2 SetupConnection metadata. */
+  client_kind: Sv2ClientKind;
   extended_channels: ExtendedChannelInfo[];
+  /**
+     * Miner management IP used for matched telemetry, if discovery found one.
+     * @nullable
+     */
+  management_ip?: string | null;
+  miner_telemetry?: null | MinerTelemetry;
+  miner_telemetry_status?: null | MinerTelemetryStatus;
   standard_channels: StandardChannelInfo[];
 }
 
@@ -323,8 +417,17 @@ export interface Sv2ClientInfo {
 export interface Sv2ClientMetadata {
   /** @minimum 0 */
   client_id: number;
+  /** Classification inferred from the client's SV2 SetupConnection metadata. */
+  client_kind: Sv2ClientKind;
   /** @minimum 0 */
   extended_channels_count: number;
+  /**
+     * Miner management IP used for matched telemetry, if discovery found one.
+     * @nullable
+     */
+  management_ip?: string | null;
+  miner_telemetry?: null | MinerTelemetry;
+  miner_telemetry_status?: null | MinerTelemetryStatus;
   /** @minimum 0 */
   standard_channels_count: number;
   total_hashrate: number;
@@ -333,8 +436,13 @@ export interface Sv2ClientMetadata {
 export interface Sv2ClientResponse {
   /** @minimum 0 */
   client_id: number;
+  client_kind: Sv2ClientKind;
   /** @minimum 0 */
   extended_channels_count: number;
+  /** @nullable */
+  management_ip?: string | null;
+  miner_telemetry?: null | MinerTelemetry;
+  miner_telemetry_status?: null | MinerTelemetryStatus;
   /** @minimum 0 */
   standard_channels_count: number;
   total_hashrate: number;

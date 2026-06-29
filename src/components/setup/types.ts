@@ -4,6 +4,7 @@ export type { MiningMode, SetupMode, OperatingSystem, BitcoinCoreVersion, Bitcoi
 export const initialSetupData: SetupData = {
   miningMode: null,
   mode: null,
+  miner_telemetry_cidr: '',
   pool: null,
   fallbackPools: [],
   bitcoin: null,
