@@ -63,7 +63,7 @@ export const SOLO_POOLS: KnownPool[] = [
     id: 'publicpool',
     name: 'PublicPool',
     address: 'public-pool.io',
-    port: 3333,
+    port: 23330,
     authority_public_key: '9c4zpyJ2ndm4e8sP2uNc1VNCGxYjqaxWS6wUCjk8zFj6njFquH6',
     description: 'Solo mining pool by PublicPool',
     logoUrl: '/public-pool-logo.svg',
