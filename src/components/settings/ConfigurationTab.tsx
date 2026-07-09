@@ -358,10 +358,10 @@ export function ConfigurationTab() {
       {/* Status Banner */}
       <Card className={isRunning ? 'border-green-500/30 bg-green-500/5' : 'border-muted'}>
         <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`h-3 w-3 rounded-full ${isRunning ? 'bg-green-500' : 'bg-muted-foreground'}`} />
-              <div>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className={`h-3 w-3 shrink-0 rounded-full ${isRunning ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+              <div className="min-w-0">
                 <p className="font-medium">{isRunning ? 'Services Running' : 'Services Stopped'}</p>
                 <p className="text-sm text-muted-foreground">
                   {isSovereignSolo ? 'Sovereign Solo Mining' : isSoloMode ? 'Solo Mining' : 'Pool Mining'}
@@ -369,7 +369,7 @@ export function ConfigurationTab() {
                 </p>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:justify-end">
               {isRunning ? (
                 <>
                   <Button
@@ -398,7 +398,12 @@ export function ConfigurationTab() {
                   </Button>
                 </>
               ) : (
-                <Button size="sm" onClick={handleRestart} disabled={isStoppingOrRestarting}>
+                <Button
+                  size="sm"
+                  onClick={handleRestart}
+                  disabled={isStoppingOrRestarting}
+                  className="w-full sm:w-auto"
+                >
                   {isStoppingOrRestarting ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Starting...</>
                   ) : (
@@ -453,16 +458,16 @@ export function ConfigurationTab() {
       {/* Current Configuration */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="space-y-1.5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1.5">
               <CardTitle>Current Configuration</CardTitle>
               <CardDescription>Your active mining client setup. Click the edit icon to change a setting.</CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleReconfigure}>
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
+              <Button variant="outline" onClick={handleReconfigure} className="flex-1 sm:flex-none">
                 Reconfigure
               </Button>
-              <Button variant="outline" onClick={handleReset}>
+              <Button variant="outline" onClick={handleReset} className="flex-1 sm:flex-none">
                 <Trash2 className="mr-2 h-4 w-4" />
                 Reset
               </Button>
@@ -471,15 +476,15 @@ export function ConfigurationTab() {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Mining Mode (read-only) */}
-          <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/20">
-            <div>
+          <div className="flex items-center justify-between gap-3 p-4 rounded-lg border border-border/50 bg-muted/20">
+            <div className="min-w-0">
               <p className="font-medium">Mining Mode</p>
               <p className="text-sm text-muted-foreground">
                 {isSovereignSolo ? 'Sovereign Solo Mining' : isSoloMode ? 'Solo Mining' : 'Pool Mining'}
                 {isJdMode && !isSovereignSolo && ' (Job Declaration)'}
               </p>
             </div>
-            <Badge variant={isSoloMode ? 'default' : 'secondary'}>
+            <Badge variant={isSoloMode ? 'default' : 'secondary'} className="shrink-0">
               {isSoloMode ? 'Solo' : 'Pool'}
             </Badge>
           </div>
@@ -495,7 +500,7 @@ export function ConfigurationTab() {
               isSaving={isSaving}
               disabled={editing !== null && editing !== 'mode'}
               display={
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <p className="text-sm text-muted-foreground">{templateModeLabel}</p>
                   <Badge variant={isJdMode ? 'default' : 'secondary'}>
                     {isJdMode ? 'JD' : 'No-JD'}
@@ -504,7 +509,7 @@ export function ConfigurationTab() {
               }
               editContent={
                 <div className="space-y-2">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     {(['no-jd', 'jd'] as const).map(m => (
                       <button
                         key={m}
@@ -916,7 +921,7 @@ function ConfigRow({
       <div className="p-4 rounded-lg border border-primary/50 bg-primary/[0.02] space-y-3">
         <p className="font-medium text-sm text-primary">{label}</p>
         {editContent}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={onSave} disabled={isSaving || saveDisabled}>
             {isSaving ? (
               <><Loader2 className="mr-2 h-3 w-3 animate-spin" /> Saving...</>
@@ -934,8 +939,8 @@ function ConfigRow({
 
   return (
     <div className="group p-4 rounded-lg border border-border/50 bg-muted/20">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1">
           <p className="font-medium text-sm">{label}</p>
           {display}
         </div>
@@ -946,7 +951,7 @@ function ConfigRow({
           className={
             disabled
               ? 'p-1.5 rounded-md text-muted-foreground/50 opacity-40 cursor-not-allowed'
-              : 'p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors opacity-0 group-hover:opacity-100'
+              : 'p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
           }
           title={disabled ? 'Finish your current edit to change this' : `Edit ${label.toLowerCase()}`}
         >
