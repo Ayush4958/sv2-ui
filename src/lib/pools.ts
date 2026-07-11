@@ -61,6 +61,15 @@ export const SOLO_POOLS: KnownPool[] = [
     logoUrl: '/mkpool-avatar-navy.svg',
   },
   {
+    id: 'nexuspool',
+    name: 'NexusPool',
+    address: 'nexuspool.io',
+    port: 3350,
+    authority_public_key: '9amd6GUzTaGXASESCa75c9Rx3vWYihRyLUAE3Vrmqwgm3T9jtxN',
+    description: 'NexusPool',
+    logoUrl: '/nexuspool-logo.png',
+  },
+  {
     id: 'publicpool',
     name: 'PublicPool',
     address: 'public-pool.io',
@@ -70,12 +79,12 @@ export const SOLO_POOLS: KnownPool[] = [
     logoUrl: '/public-pool-logo.svg',
   },
   {
-    id: 'pypool',
-    name: 'PyPool',
+    id: 'pyblock',
+    name: 'PyBLØCK',
     address: 'pool.pyblock.xyz',
     port: 5555,
     authority_public_key: '9anZZb1uaJDqubvJhekPiNRHA2tuShcNaugDmFxtnTq54sDvTf5',
-    description: 'PyPool',
+    description: 'PyBLØCK',
     logoUrl: '/pyblock-pool-logo.svg',
   },
   {
