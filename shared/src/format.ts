@@ -55,7 +55,7 @@ export function inferOsFromDataDir(dataDir: string): OperatingSystem {
 export function mapHostOsToOperatingSystem(hostOs: string): OperatingSystem | null {
   const normalized = hostOs.toLowerCase();
   if (normalized === 'linux') return 'linux';
-  if (normalized === 'macos') return 'macos';
+  if (normalized === 'macos' || normalized === 'darwin' || normalized === 'mac') return 'macos';
   if (normalized === 'umbrel') return 'umbrel';
   return null;
 }

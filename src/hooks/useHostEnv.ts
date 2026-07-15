@@ -5,6 +5,13 @@ interface HostEnv {
   STRATUM_HOST: string | null;
 }
 
+function detectBrowserOs(): string | null {
+  const browserPlatform = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
+  if (browserPlatform.includes('mac')) return 'macos';
+  if (browserPlatform.includes('linux')) return 'linux';
+  return null;
+}
+
 export function useHostEnv() {
   const [hostOs, setHostOs] = useState<string | null>(null);
   const [stratumHost, setStratumHost] = useState<string | null>(null);
@@ -16,13 +23,14 @@ export function useHostEnv() {
       .then(res => res.json() as Promise<HostEnv>)
       .then(data => {
         if (!cancelled) {
-          setHostOs(data.HOST_OS);
+          setHostOs(data.HOST_OS ?? detectBrowserOs());
           setStratumHost(data.STRATUM_HOST);
           setIsLoading(false);
         }
       })
       .catch(() => {
         if (!cancelled) {
+          setHostOs(detectBrowserOs());
           setIsLoading(false);
         }
       });
