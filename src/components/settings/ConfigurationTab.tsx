@@ -1221,16 +1221,27 @@ function FallbackPoolsEdit({
     onChange(nextPools);
   };
 
-  const addPool = () => {
-    const availablePreset = availablePools.find((pool) => (
-      pool.badge !== 'coming-soon' &&
-      !pools.some((usedPool) => isSamePool(usedPool, pool))
-    ));
+  const availablePreset = availablePools.find((pool) => (
+    pool.badge !== 'coming-soon' &&
+    !pools.some((usedPool) => isSamePool(usedPool, pool))
+  ));
 
+  const addPresetPool = () => {
+    if (!availablePreset) return;
     onChange([
       ...pools,
       normalizePoolUserIdentity(
-        availablePreset ? knownPoolToConfig(availablePreset) : createEmptyCustomPool(),
+        knownPoolToConfig(availablePreset),
+        miningMode,
+      ),
+    ]);
+  };
+
+  const addCustomPool = () => {
+    onChange([
+      ...pools,
+      normalizePoolUserIdentity(
+        createEmptyCustomPool(),
         miningMode,
       ),
     ]);
@@ -1294,14 +1305,25 @@ function FallbackPoolsEdit({
         />
       ))}
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={addPool}
-      >
-        Add Fallback Pool
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addPresetPool}
+          disabled={!availablePreset}
+        >
+          Add Preset Pool
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addCustomPool}
+        >
+          Add Custom Pool
+        </Button>
+      </div>
     </div>
   );
 }
