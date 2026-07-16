@@ -200,22 +200,22 @@ export function BitcoinPrereqStep({ data, updateData, onNext, discoveredNodes, i
     ?? (primaryNode ? inferOsFromDataDir(primaryNode.dataDir) : null);
 
   const handleConfigureManually = () => {
-    if (!manualOs) return;
+    if (manualOs) {
+      const networkChanged = data.bitcoin?.network !== undefined
+        && data.bitcoin.network !== selectedNetwork;
 
-    const networkChanged = data.bitcoin?.network !== undefined
-      && data.bitcoin.network !== selectedNetwork;
-
-    updateData({
-      bitcoin: {
-        ...(data.bitcoin ?? {}),
-        core_version: data.bitcoin?.core_version ?? null,
-        os: manualOs,
-        network: selectedNetwork,
-        customDataDir: data.bitcoin?.customDataDir ?? '',
-        socket_path: networkChanged ? '' : data.bitcoin?.socket_path ?? '',
-        discoveredLogPath: networkChanged ? undefined : data.bitcoin?.discoveredLogPath,
-      },
-    });
+      updateData({
+        bitcoin: {
+          ...(data.bitcoin ?? {}),
+          core_version: data.bitcoin?.core_version ?? null,
+          os: manualOs,
+          network: selectedNetwork,
+          customDataDir: data.bitcoin?.customDataDir ?? '',
+          socket_path: networkChanged ? '' : data.bitcoin?.socket_path ?? '',
+          discoveredLogPath: networkChanged ? undefined : data.bitcoin?.discoveredLogPath,
+        },
+      });
+    }
 
     onNext();
   };
@@ -292,8 +292,7 @@ export function BitcoinPrereqStep({ data, updateData, onNext, discoveredNodes, i
     success: 'border-success/20 bg-success/10 text-success',
   }[readiness.tone];
 
-  const canConfigureManually = Boolean(manualOs)
-    && !hostOsLoading
+  const canConfigureManually = !hostOsLoading
     && !isDiscovering
     && !isSyncing
     && !isUnsupportedVersion
