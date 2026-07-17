@@ -8,6 +8,7 @@ export interface SetupStatus {
   miningMode: 'solo' | 'pool' | null;
   mode: 'jd' | 'no-jd' | null;
   poolName: string | null;
+  activePoolIndex: number | null;
   containers: {
     translator: { id: string; name: string; status: string } | null;
     jdc: { id: string; name: string; status: string } | null;
@@ -53,8 +54,8 @@ export function useSetupStatus() {
   const query = useQuery({
     queryKey: ['setup-status'],
     queryFn: fetchSetupStatus,
-    staleTime: 10000,
-    refetchInterval: 10000,
+    staleTime: 5000,
+    refetchInterval: 5000,
     retry: false,
   });
 
@@ -76,6 +77,7 @@ export function useSetupStatus() {
     miningMode: status?.miningMode ?? null,
     mode: status?.mode ?? null,
     poolName: status?.poolName ?? null,
+    activePoolIndex: status?.activePoolIndex ?? null,
     containers: status?.containers ?? { translator: null, jdc: null },
     // User needs setup if: orchestrated mode AND not yet configured
     needsSetup: status !== null && status !== undefined && !status.configured,
