@@ -116,6 +116,7 @@ export function ConfigurationTab() {
     isRunning,
     miningMode: statusMiningMode,
     mode: statusMode,
+    activePoolIndex,
   } = useSetupStatus();
   const {
     stop,
@@ -598,7 +599,11 @@ export function ConfigurationTab() {
               saveDisabled={!isPoolValid}
               disabled={editing !== null && editing !== 'pool'}
               display={
-                <PoolSummary pool={config.pool} miningMode={activeMiningMode} />
+                <PoolSummary
+                  pool={config.pool}
+                  miningMode={activeMiningMode}
+                  isActive={isRunning && activePoolIndex === 0}
+                />
               }
               editContent={
                 <div className="space-y-2">
@@ -720,6 +725,7 @@ export function ConfigurationTab() {
                         pool={pool}
                         miningMode={activeMiningMode}
                         fallbackIndex={index}
+                        isActive={isRunning && activePoolIndex === index + 1}
                       />
                     ))
                   )}
@@ -990,10 +996,12 @@ function PoolSummary({
   pool,
   miningMode,
   fallbackIndex,
+  isActive = false,
 }: {
   pool: PoolConfig;
   miningMode: SetupData['miningMode'];
   fallbackIndex?: number;
+  isActive?: boolean;
 }) {
   const knownPool = getKnownPoolForConfig(pool);
   const displayName = (knownPool?.name ?? pool.name) || 'Custom Pool';
@@ -1015,7 +1023,13 @@ function PoolSummary({
         fallbackClassName="h-4 w-4"
       />
       <div className="min-w-0 space-y-0.5">
-        <p className="font-medium text-sm">{displayName}</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <p className="font-medium text-sm">{displayName}</p>
+          {isActive && <Badge variant="default">Current</Badge>}
+          {isActive && fallbackIndex !== undefined && (
+            <Badge variant="secondary">Fallback</Badge>
+          )}
+        </div>
         <p className="text-muted-foreground font-mono text-xs">
           {pool.address}:{pool.port}
         </p>

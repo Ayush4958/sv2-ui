@@ -32,6 +32,7 @@ import {
   autoDiscoverBitcoinRpc
 } from './docker.js';
 import { getLogDiagnostics, getLogStreams, readCollatedLogLines } from './logs/diagnostics.js';
+import { ActivePoolTracker } from './active-pool.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -46,6 +47,7 @@ const AUTO_START_RETRY_INTERVAL_MS = 30_000;
 type StackBusyReason = 'auto-start' | 'manual';
 
 let stackBusyReason: StackBusyReason | null = null;
+const activePoolTracker = new ActivePoolTracker(readContainerLogs);
 
 type SavedState = {
   configured: boolean;
@@ -242,17 +244,32 @@ app.get('/api/status', async (_req, res) => {
   try {
     const state = await loadState();
     const containers = await getStackStatus(state.mode);
+    const running = isStackRunning(state.mode, containers);
+    const isSovereignSolo = state.data?.miningMode === 'solo' && state.data?.mode === 'jd';
+    const pools = state.data && !isSovereignSolo ? configuredPools(state.data) : [];
+
+    if (!running) {
+      activePoolTracker.reset();
+    }
+
+    const activePool = running && state.mode && pools.length > 0
+      ? await activePoolTracker.getActivePool(
+          state.mode === 'jd' ? 'jdc' : 'translator',
+          pools
+        )
+      : null;
 
     const response: StatusResponse = {
       configured: state.configured,
-      running: isStackRunning(state.mode, containers),
+      running,
       autoStarting: stackBusyReason === 'auto-start',
       shouldBeRunning: state.shouldBeRunning,
       miningMode: state.miningMode,
       mode: state.mode,
-      poolName: state.data?.miningMode === 'solo' && state.data?.mode === 'jd'
+      poolName: isSovereignSolo
         ? 'Sovereign Solo Mining'
-        : (state.data?.pool?.name ?? null),
+        : (activePool?.name ?? null),
+      activePoolIndex: activePool?.index ?? null,
       containers,
     };
 

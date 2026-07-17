@@ -17,6 +17,7 @@ export interface StatusResponse {
   miningMode: MiningMode | null;
   mode: SetupMode | null;
   poolName: string | null;
+  activePoolIndex: number | null;
   containers: {
     translator: ContainerStatus | null;
     jdc: ContainerStatus | null;

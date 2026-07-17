@@ -593,7 +593,7 @@ function splitLogLines(
 
 export async function readContainerLogs(
   container: LogContainerRole,
-  options: { tail?: number } = {}
+  options: { tail?: number; since?: number } = {}
 ): Promise<ContainerLogLine[]> {
   refreshDockerConnection();
 
@@ -611,8 +611,11 @@ export async function readContainerLogs(
       abortSignal: AbortSignal.timeout(2000),
     };
 
-    if (startTime) {
-      logOptions.since = Math.floor(new Date(startTime).getTime() / 1000);
+    const containerStart = startTime
+      ? Math.floor(new Date(startTime).getTime() / 1000)
+      : null;
+    if (options.since !== undefined || containerStart !== null) {
+      logOptions.since = Math.max(options.since ?? 0, containerStart ?? 0);
     }
 
     const logBuffer = await dockerContainer.logs(logOptions);
