@@ -13,6 +13,7 @@ export interface KnownPool {
   badge?: 'testing' | 'coming-soon';
   logoUrl?: string;
   logoOnDark?: boolean;
+  monogram?: string;
 }
 
 export const POOL_MINING_NO_JD: KnownPool[] = [
@@ -50,6 +51,15 @@ export const SOLO_POOLS: KnownPool[] = [
     authority_public_key: '9bCoFxTszKCuffyywH5uS5o6WcU4vsjTH2axxc7wE86y2HhvULU',
     description: 'Blitzpool',
     logoUrl: '/blitzpool.svg',
+  },
+  {
+    id: 'ckpool',
+    name: 'CKPool',
+    address: 'sv2solo.ckpool.org',
+    port: 3336,
+    authority_public_key: '9anrRNhBh7869XtNnFcCuGBRZP51E635qGbu457J5kHdszhfRc3',
+    description: 'CKPool',
+    monogram: 'CK',
   },
   {
     id: 'mkpool',
