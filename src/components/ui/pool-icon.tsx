@@ -4,6 +4,9 @@ import { cn } from '@/lib/utils';
 interface PoolIconProps {
   logoUrl?: string | null;
   logoOnDark?: boolean;
+  monogram?: string | null;
+  invertLogoInDarkMode?: boolean;
+  logoScale?: number;
   name?: string;
   className?: string;
   imageClassName?: string;
@@ -13,6 +16,9 @@ interface PoolIconProps {
 export function PoolIcon({
   logoUrl,
   logoOnDark,
+  monogram,
+  invertLogoInDarkMode,
+  logoScale,
   name,
   className,
   imageClassName,
@@ -28,14 +34,21 @@ export function PoolIcon({
         <img
           src={logoUrl}
           alt={name ?? ''}
-          className={cn('w-7 h-7 object-contain', imageClassName)}
+          className={cn('w-7 h-7 object-contain', invertLogoInDarkMode && 'dark:invert', imageClassName)}
+          style={logoScale ? { transform: `scale(${logoScale})` } : undefined}
           onError={e => {
             e.currentTarget.style.display = 'none';
             (e.currentTarget.nextElementSibling as HTMLElement)?.classList.remove('hidden');
           }}
         />
       ) : null}
-      <Server className={cn('w-5 h-5 text-muted-foreground', logoUrl ? 'hidden' : '', fallbackClassName)} />
+      {monogram ? (
+        <span className={cn('text-xs font-semibold leading-none tracking-tight text-black dark:text-white', logoUrl ? 'hidden' : '')}>
+          {monogram}
+        </span>
+      ) : (
+        <Server className={cn('w-5 h-5 text-muted-foreground', logoUrl ? 'hidden' : '', fallbackClassName)} />
+      )}
     </div>
   );
 }
