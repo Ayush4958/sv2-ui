@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 interface PoolIconProps {
   logoUrl?: string | null;
   logoOnDark?: boolean;
+  monogram?: string | null;
   name?: string;
   className?: string;
   imageClassName?: string;
@@ -13,6 +14,7 @@ interface PoolIconProps {
 export function PoolIcon({
   logoUrl,
   logoOnDark,
+  monogram,
   name,
   className,
   imageClassName,
@@ -35,7 +37,13 @@ export function PoolIcon({
           }}
         />
       ) : null}
-      <Server className={cn('w-5 h-5 text-muted-foreground', logoUrl ? 'hidden' : '', fallbackClassName)} />
+      {monogram ? (
+        <span className={cn('text-xs font-semibold leading-none tracking-tight text-black dark:text-white', logoUrl ? 'hidden' : '')}>
+          {monogram}
+        </span>
+      ) : (
+        <Server className={cn('w-5 h-5 text-muted-foreground', logoUrl ? 'hidden' : '', fallbackClassName)} />
+      )}
     </div>
   );
 }

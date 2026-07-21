@@ -1017,6 +1017,7 @@ function PoolSummary({
       <PoolIcon
         logoUrl={knownPool?.logoUrl}
         logoOnDark={knownPool?.logoOnDark}
+        monogram={knownPool?.monogram}
         name={displayName}
         className="h-9 w-9 rounded-lg"
         imageClassName="h-5 w-5"
@@ -1420,6 +1421,7 @@ function SettingsFallbackPoolRow({
           <PoolIcon
             logoUrl={knownPool?.logoUrl}
             logoOnDark={knownPool?.logoOnDark}
+            monogram={knownPool?.monogram}
             name={displayName}
             className="h-11 w-11 rounded-xl"
           />
@@ -1603,7 +1605,7 @@ function PoolOption({
           : 'border-border bg-card hover:border-primary/45'
       }`}
     >
-      <PoolIcon logoUrl={pool.logoUrl} logoOnDark={pool.logoOnDark} name={pool.name} />
+      <PoolIcon logoUrl={pool.logoUrl} logoOnDark={pool.logoOnDark} monogram={pool.monogram} name={pool.name} />
       <div className="flex-1 min-w-0">
         <div className={`font-medium text-sm ${selected ? 'text-primary' : ''}`}>{pool.name}</div>
         <div className="text-xs text-muted-foreground font-mono">{pool.address}:{pool.port}</div>
