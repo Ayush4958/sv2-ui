@@ -55,15 +55,26 @@ export function HashrateInput({
 }: HashrateInputProps) {
   const [inputValue, setInputValue] = useState(() => formatInputValue(value));
   const [inputError, setInputError] = useState<string | null>(null);
-  const { label, multiplier } = getAutoUnit(value);
+  const [inputUnit, setInputUnit] = useState(() => getAutoUnit(value));
+  const [inputFocused, setInputFocused] = useState(false);
+  const { label, multiplier } = inputUnit;
   const inputId = `${idPrefix}-input`;
   const unitId = `${idPrefix}-unit`;
   const errorId = `${idPrefix}-error`;
 
   useEffect(() => {
-    setInputValue(formatInputValue(value));
-    onValidityChange?.(Number.isFinite(value) && value > 0);
-  }, [onValidityChange, value]);
+    if (inputError) {
+      onValidityChange?.(false);
+      return;
+    }
+
+    const isValid = Number.isFinite(value) && value > 0;
+    if (!inputFocused) {
+      setInputUnit(getAutoUnit(value));
+      setInputValue(formatInputValue(value));
+    }
+    onValidityChange?.(isValid);
+  }, [inputError, inputFocused, onValidityChange, value]);
 
   const handleInputChange = (nextValue: string) => {
     const cleaned = nextValue.replace(/e/i, '');
@@ -81,10 +92,27 @@ export function HashrateInput({
     onChange(Math.round(parsed * multiplier));
   };
 
+  const handleInputBlur = () => {
+    setInputFocused(false);
+
+    const parsed = Number(inputValue);
+    if (inputError || inputValue === '' || !Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    const nextRaw = Math.round(parsed * multiplier);
+    setInputUnit(getAutoUnit(nextRaw));
+    setInputValue(formatInputValue(nextRaw));
+  };
+
   const handleSliderChange = (position: number) => {
+    const raw = sliderToRaw(position);
     setInputError(null);
+    setInputFocused(false);
+    setInputUnit(getAutoUnit(raw));
+    setInputValue(formatInputValue(raw));
     onValidityChange?.(true);
-    onChange(sliderToRaw(position));
+    onChange(raw);
   };
 
   return (
@@ -96,6 +124,8 @@ export function HashrateInput({
           type="number"
           min="0"
           value={inputValue}
+          onFocus={() => setInputFocused(true)}
+          onBlur={handleInputBlur}
           onChange={(event) => handleInputChange(event.target.value)}
           aria-describedby={`${unitId}${inputError ? ` ${errorId}` : ''}`}
           aria-invalid={inputError ? true : undefined}
