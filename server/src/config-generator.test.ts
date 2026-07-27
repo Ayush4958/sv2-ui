@@ -154,6 +154,7 @@ test('jdc config uses shared shares-per-minute and miner signature', () => {
 
   assert.ok(config);
   assert.match(config, /shares_per_minute = 12\.5/);
+  assert.match(config, /reserved_downstream_rollable_extranonce_size = 8/);
   assert.match(config, /jdc_signature = "custom-miner-tag"/);
   assert.match(config, /monitoring_cache_refresh_secs = 5/);
   assert.match(config, /\[miner_telemetry\]\ncidrs = \["192\.168\.1\.0\/24"\]/);
@@ -331,6 +332,32 @@ test('jdc in pool mode puts user_identity inside [[upstreams]]', () => {
   assert.ok(identityIdx > upstreamIdx);
   assert.equal(config.slice(0, upstreamIdx).includes('user_identity'), false);
   assert.match(config, /\[\[upstreams\]\][\s\S]*user_identity = "miner\.worker1"/);
+});
+
+test('jdc config uses a custom JD port and defaults fallbacks to 3334', () => {
+  const config = generateJdcConfig({
+    ...BASE_DATA_30,
+    pool: {
+      ...BASE_DATA_30.pool!,
+      jds_port: 3337,
+    },
+    fallbackPools: [
+      {
+        name: 'Fallback Pool',
+        address: 'fallback.pool.com',
+        port: 4444,
+        authority_public_key: 'fallback-key',
+        user_identity: 'miner.fallback',
+      },
+    ],
+  });
+
+  assert.ok(config);
+  const fallbackIndex = config.indexOf('pool_address = "fallback.pool.com"');
+
+  assert.ok(fallbackIndex > 0);
+  assert.match(config.slice(0, fallbackIndex), /jds_port = 3337/);
+  assert.match(config.slice(fallbackIndex), /jds_port = 3334/);
 });
 
 test('jdc config writes Bitcoin Core IPC version', () => {
