@@ -18,7 +18,7 @@ export interface DownstreamWorkerRow {
   connection_id: number;
   channel_id: number | null;
   channel_type: ChannelType;
-  user_identity: string;
+  identity: string;
   management_ip?: string | null;
   miner_telemetry_status?: MinerTelemetryStatus | null;
   miner_telemetry?: MinerTelemetry | null;
@@ -32,7 +32,7 @@ export type DownstreamWorkerSortKey =
   | 'connection_id'
   | 'channel_id'
   | 'channel_type'
-  | 'user_identity'
+  | 'identity'
   | 'estimated_hashrate'
   | 'best_diff';
 
@@ -218,9 +218,9 @@ export function DownstreamWorkerTable({
                   Channel Type <SortIcon column="channel_type" sortKey={sortKey} sortDir={sortDir} />
                 </span>
               </TableHead>
-              <TableHead className="cursor-pointer select-none" onClick={() => onSort('user_identity')}>
+              <TableHead className="cursor-pointer select-none" onClick={() => onSort('identity')}>
                 <span className="flex items-center gap-1 hover:text-foreground transition-colors">
-                  User Identity <SortIcon column="user_identity" sortKey={sortKey} sortDir={sortDir} />
+                  Username / Identity <SortIcon column="identity" sortKey={sortKey} sortDir={sortDir} />
                 </span>
               </TableHead>
               <TableHead className="whitespace-nowrap">Management IP</TableHead>
@@ -256,7 +256,7 @@ export function DownstreamWorkerTable({
           </TableHeader>
           <TableBody>
             {workers.map((worker) => (
-              <TableRow key={`${worker.connection_id}-${worker.channel_type}-${worker.channel_id ?? 'na'}-${worker.user_identity}`} className="hover:bg-muted/20 group">
+              <TableRow key={`${worker.connection_id}-${worker.channel_type}-${worker.channel_id ?? 'na'}-${worker.identity}`} className="hover:bg-muted/20 group">
                 <TableCell className="font-mono text-xs text-muted-foreground">
                   {worker.connection_id}
                 </TableCell>
@@ -274,7 +274,7 @@ export function DownstreamWorkerTable({
                   </span>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {worker.user_identity || '-'}
+                  {worker.identity || '-'}
                 </TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                   {worker.management_ip || '-'}

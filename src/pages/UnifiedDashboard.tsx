@@ -59,7 +59,7 @@ const SETUP_TARGET_STEP_STORAGE_KEY = 'sv2-ui-setup-target-step';
  * - Connection Id
  * - Channel Id
  * - Channel Type
- * - User Identity
+ * - Username / Identity
  */
 export function UnifiedDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -212,7 +212,7 @@ export function UnifiedDashboard() {
           connection_id: client.client_id,
           channel_id: channel.channel_id,
           channel_type: 'sv2_extended' as const,
-          user_identity: channel.user_identity,
+          identity: channel.user_identity,
           management_ip: client.management_ip,
           miner_telemetry_status: client.miner_telemetry_status,
           miner_telemetry: client.miner_telemetry,
@@ -232,7 +232,7 @@ export function UnifiedDashboard() {
           connection_id: client.client_id,
           channel_id: channel.channel_id,
           channel_type: 'sv2_standard' as const,
-          user_identity: channel.user_identity,
+          identity: channel.user_identity,
           management_ip: client.management_ip,
           miner_telemetry_status: client.miner_telemetry_status,
           miner_telemetry: client.miner_telemetry,
@@ -406,7 +406,7 @@ export function UnifiedDashboard() {
         connection_id: client.client_id,
         channel_id: client.channel_id ?? null,
         channel_type: 'sv1' as ChannelType,
-        user_identity: client.user_identity,
+        identity: client.sv1_username,
         management_ip: client.management_ip,
         miner_telemetry_status: client.miner_telemetry_status,
         miner_telemetry: client.miner_telemetry,
@@ -414,8 +414,8 @@ export function UnifiedDashboard() {
         hashrate_source: resolvedHashrate.source,
         best_diff: null,
         search_text: [
-          client.authorized_worker_name || '',
-          client.user_identity,
+          client.sv1_username,
+          client.sv1_worker_name,
           client.management_ip || '',
           client.miner_telemetry_status || '',
           client.miner_telemetry?.make || '',
@@ -435,7 +435,7 @@ export function UnifiedDashboard() {
         ...downstreamWorkers.map((worker) => ({
           ...worker,
           search_text: [
-            worker.user_identity,
+            worker.identity,
             worker.management_ip || '',
             worker.miner_telemetry_status || '',
             worker.miner_telemetry?.make || '',
