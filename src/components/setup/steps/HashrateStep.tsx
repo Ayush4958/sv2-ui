@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { StepProps } from '../types';
+import { getMinerTelemetryCidrError, normalizeMinerTelemetryCidr } from '@sv2-ui/shared';
 import { Check, ChevronDown, Settings2 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { HashrateInput } from '@/components/ui/hashrate-input';
@@ -50,6 +51,7 @@ export function HashrateStep({ data, updateData, onNext }: StepProps) {
   const [hashrateInputValid, setHashrateInputValid] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [verifyPayout, setVerifyPayout] = useState(data.translator?.verify_payout ?? true);
+  const [minerTelemetryCidr, setMinerTelemetryCidr] = useState(data.miner_telemetry_cidr ?? '');
   const [sharesPerMinute, setSharesPerMinute] = useState(String(existingSharesPerMinute));
   const [downstreamExtranonce2Size, setDownstreamExtranonce2Size] = useState(
     String(existingDownstreamExtranonce2Size),
@@ -66,12 +68,15 @@ export function HashrateStep({ data, updateData, onNext }: StepProps) {
   };
 
   const hashrate = rawHashrate;
+  const minerTelemetryCidrError = getMinerTelemetryCidrError(minerTelemetryCidr);
   const advancedIsValid =
+    !minerTelemetryCidrError &&
     isPositiveNumber(sharesPerMinute) &&
     isPositiveInteger(downstreamExtranonce2Size);
 
   useEffect(() => {
     updateData({
+      miner_telemetry_cidr: normalizeMinerTelemetryCidr(minerTelemetryCidr),
       translator: {
         enable_vardiff: true,
         aggregate_channels: data.translator?.aggregate_channels ?? false,
@@ -84,7 +89,7 @@ export function HashrateStep({ data, updateData, onNext }: StepProps) {
     });
   // intentionally excluded: data.translator and updateData cause infinite loop when included
     // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [hashrate, sharesPerMinute, downstreamExtranonce2Size, verifyPayout, isSoloPool]);
+}, [hashrate, minerTelemetryCidr, sharesPerMinute, downstreamExtranonce2Size, verifyPayout, isSoloPool]);
 
   return (
     <div className="space-y-8">
@@ -146,6 +151,34 @@ export function HashrateStep({ data, updateData, onNext }: StepProps) {
           </div>
         );
       })()}
+
+      <div className="p-4 rounded-xl border border-border bg-card space-y-3">
+        <div>
+          <label htmlFor="miner-telemetry-cidr" className="block text-sm font-medium mb-2">
+            Miners' LAN CIDR <span className="text-muted-foreground font-normal">(optional)</span>
+          </label>
+          <input
+            id="miner-telemetry-cidr"
+            type="text"
+            value={minerTelemetryCidr}
+            onChange={(event) => setMinerTelemetryCidr(event.target.value)}
+            placeholder="192.168.1.0/24"
+            autoComplete="off"
+            aria-invalid={Boolean(minerTelemetryCidrError)}
+            aria-describedby="miner-telemetry-cidr-desc miner-telemetry-cidr-error"
+            className="w-full h-10 px-3 rounded-lg border border-input bg-background font-mono text-sm focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15 outline-none transition-all"
+          />
+          {minerTelemetryCidrError && (
+            <p id="miner-telemetry-cidr-error" className="text-xs text-destructive mt-1">
+              {minerTelemetryCidrError}
+            </p>
+          )}
+          <p id="miner-telemetry-cidr-desc" className="text-xs text-muted-foreground mt-2">
+            Recommended for better telemetry. Use the private LAN subnet where miners expose
+            their web/API interface.
+          </p>
+        </div>
+      </div>
 
       <div className="rounded-xl border border-border bg-card">
         <button

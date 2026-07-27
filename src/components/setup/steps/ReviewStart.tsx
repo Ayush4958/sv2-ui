@@ -333,6 +333,20 @@ export function ReviewStart({ data, onComplete, onGoToStep }: ReviewStartProps) 
           </div>
         )}
 
+        {data.miner_telemetry_cidr && (
+          <div className="p-5 border-x border-b border-border bg-card">
+            <SectionLabel n={nextSection()} label="Miner Telemetry" />
+            <div className="text-sm text-muted-foreground space-y-1 pl-7">
+              <div className="font-mono text-xs text-foreground">
+                {data.miner_telemetry_cidr}
+              </div>
+              <div className="text-xs">
+                LAN subnet scanned for miner web/API telemetry.
+              </div>
+            </div>
+          </div>
+        )}
+
         {data.translator && (
           <div className={`p-5 border-x border-b border-border bg-card ${!isJdMode ? "rounded-b-xl" : ""}`}>
             <SectionLabel n={nextSection()} label="Advanced Mining Config" />

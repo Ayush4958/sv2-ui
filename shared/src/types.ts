@@ -41,6 +41,7 @@ export interface TranslatorConfig {
 export interface SetupData {
   miningMode: MiningMode | null;
   mode: SetupMode | null;
+  miner_telemetry_cidr: string;
   pool: PoolConfig | null;
   fallbackPools: PoolConfig[];
   bitcoin: BitcoinConfig | null;

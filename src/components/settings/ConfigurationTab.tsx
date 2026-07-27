@@ -34,7 +34,9 @@ import {
   DEFAULT_DOWNSTREAM_EXTRANONCE2_SIZE,
   DEFAULT_MIN_HASHRATE,
   formatBitcoinCoreVersion,
+  getMinerTelemetryCidrError,
   normalizeBitcoinCoreVersion,
+  normalizeMinerTelemetryCidr,
 } from '@sv2-ui/shared';
 import {
   Loader2,
@@ -73,7 +75,7 @@ function clearPersistedDashboardState() {
 
 const SETUP_TARGET_STEP_STORAGE_KEY = 'sv2-ui-setup-target-step';
 
-type EditingField = null | 'pools' | 'mode' | 'signature' | 'hashrate' | 'advanced';
+type EditingField = null | 'pools' | 'mode' | 'signature' | 'hashrate' | 'telemetry' | 'advanced';
 
 function isPositiveNumber(value: string): boolean {
   const parsed = Number(value);
@@ -120,6 +122,7 @@ export function ConfigurationTab() {
   const [editSignature, setEditSignature] = useState<string>('');
   const [editHashrate, setEditHashrate] = useState<number | null>(null);
   const [hashrateInputValid, setHashrateInputValid] = useState(true);
+  const [editMinerTelemetryCidr, setEditMinerTelemetryCidr] = useState('');
   const [editAdvanced, setEditAdvanced] = useState<{
     shares_per_minute: string;
     downstream_extranonce2_size: string;
@@ -225,6 +228,11 @@ export function ConfigurationTab() {
     setEditing('hashrate');
   };
 
+  const startEditTelemetry = () => {
+    setEditMinerTelemetryCidr(config?.miner_telemetry_cidr ?? '');
+    setEditing('telemetry');
+  };
+
   const startEditAdvanced = () => {
     if (!config?.translator) return;
     const configIsSoloPool = config.miningMode === 'solo' && config.mode === 'no-jd';
@@ -246,6 +254,7 @@ export function ConfigurationTab() {
     setEditSignature('');
     setEditHashrate(null);
     setHashrateInputValid(true);
+    setEditMinerTelemetryCidr('');
     setEditAdvanced(null);
   };
 
@@ -261,6 +270,8 @@ export function ConfigurationTab() {
     editHashrate !== null &&
     Number.isFinite(editHashrate) &&
     editHashrate > 0;
+  const minerTelemetryCidrError = getMinerTelemetryCidrError(editMinerTelemetryCidr);
+  const isMinerTelemetryCidrValid = !minerTelemetryCidrError;
   const isAdvancedValid =
     !!editAdvanced &&
     isPositiveNumber(editAdvanced.shares_per_minute) &&
@@ -294,6 +305,9 @@ export function ConfigurationTab() {
         ...config.translator,
         min_hashrate: editHashrate,
       };
+    } else if (editing === 'telemetry') {
+      if (!isMinerTelemetryCidrValid) return;
+      updated.miner_telemetry_cidr = normalizeMinerTelemetryCidr(editMinerTelemetryCidr);
     } else if (editing === 'advanced') {
       if (!isAdvancedValid || !config.translator || !editAdvanced) return;
       const configIsSoloPool = config.miningMode === 'solo' && config.mode === 'no-jd';
@@ -772,6 +786,50 @@ export function ConfigurationTab() {
               }
             />
           )}
+
+          <ConfigRow
+            label="Miner Telemetry"
+            editing={editing === 'telemetry'}
+            onEdit={startEditTelemetry}
+            onSave={saveEdit}
+            onCancel={cancelEdit}
+            isSaving={isSaving}
+            saveDisabled={!isMinerTelemetryCidrValid}
+            disabled={editing !== null && editing !== 'telemetry'}
+            display={
+              <div className="grid gap-1 text-xs text-muted-foreground">
+                <p>
+                  LAN CIDR:{' '}
+                  <span className="font-mono text-foreground">
+                    {config.miner_telemetry_cidr || 'Not set'}
+                  </span>
+                </p>
+                <p>Recommended to discover miner web/API telemetry.</p>
+              </div>
+            }
+            editContent={
+              <div>
+                <label htmlFor="edit-miner-telemetry-cidr" className="block text-xs font-medium mb-1">
+                  Miners' LAN CIDR <span className="text-muted-foreground font-normal">(optional)</span>
+                </label>
+                <input
+                  id="edit-miner-telemetry-cidr"
+                  type="text"
+                  value={editMinerTelemetryCidr}
+                  onChange={(event) => setEditMinerTelemetryCidr(event.target.value)}
+                  placeholder="192.168.1.0/24"
+                  autoComplete="off"
+                  className="w-full h-9 px-3 rounded-lg border border-input bg-background font-mono text-sm focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15 outline-none transition-all"
+                />
+                {minerTelemetryCidrError && (
+                  <p className="text-xs text-destructive mt-1">{minerTelemetryCidrError}</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Private LAN subnet where miners expose their web/API interface.
+                </p>
+              </div>
+            }
+          />
 
           {/* Advanced mining configuration */}
           {config.translator && (

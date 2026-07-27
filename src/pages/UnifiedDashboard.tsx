@@ -18,7 +18,6 @@ import {
   useSv1ClientsData,
   useTranslatorHealth,
   useJdcHealth,
-  useTranslatorServerChannels,
 } from '@/hooks/usePoolData';
 import { useHashrateHistory } from '@/hooks/useHashrateHistory';
 import {
@@ -30,6 +29,7 @@ import { isAggregatedTproxyPoolName } from '@/components/setup/poolRules';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useLogDiagnostics } from '@/hooks/useLogDiagnostics';
+import { resolveMinerHashrate } from '@/lib/minerTelemetry';
 import { formatHashrate, formatDifficulty, formatNumber } from '@/lib/utils';
 import type { Sv1ClientInfo } from '@/types/api';
 
@@ -42,10 +42,6 @@ const RANGE_DESCRIPTIONS: Record<TimeRange, string> = {
 const BITCOIN_CORE_VERSION_MISMATCH_CODE = 'jdc-bitcoin-core-unsupported-mining-interface';
 const BITCOIN_CORE_DISCONNECTED_CODE = 'jdc-bitcoin-core-disconnected';
 const SETUP_TARGET_STEP_STORAGE_KEY = 'sv2-ui-setup-target-step';
-
-function normalizeUserIdentity(userIdentity: string) {
-  return userIdentity.trim().toLowerCase();
-}
 
 /**
  * Unified Dashboard for the SV2 Mining Stack.
@@ -104,9 +100,7 @@ export function UnifiedDashboard() {
   const {
     data: sv1Data,
     isLoading: sv1Loading,
-  } = useSv1ClientsData(0, 1000, !isJdMode); // Translator-only rows for the shared worker table
-
-  const { data: translatorServerChannels } = useTranslatorServerChannels(isJdMode);
+  } = useSv1ClientsData(0, 1000);
 
   // Health checks for the error banner (React Query deduplicates the API calls)
   const { data: translatorOk, isLoading: translatorHealthLoading, isError: translatorHealthError } = useTranslatorHealth();
@@ -170,8 +164,14 @@ export function UnifiedDashboard() {
 
   // Translator SV1 worker stats
   const allSv1Clients = useMemo(() => sv1Data?.items || [], [sv1Data?.items]);
+  const directSv2Clients = useMemo(
+    () => sv2Clients?.filter((client) => client.client_kind !== 'translator_proxy') || [],
+    [sv2Clients]
+  );
   const activeSv1Clients = useMemo(
-    () => allSv1Clients.filter((client: Sv1ClientInfo) => client.hashrate !== null),
+    () => allSv1Clients.filter((client: Sv1ClientInfo) =>
+      resolveMinerHashrate(client.miner_telemetry, client.hashrate).hashrate !== null
+    ),
     [allSv1Clients]
   );
   const sv1TotalClients = sv1Data?.total || 0;
@@ -179,120 +179,98 @@ export function UnifiedDashboard() {
 
   // Calculate total hashrate from SV1 clients
   const sv1TotalHashrate = useMemo(() => {
-    return allSv1Clients.reduce((sum, client) => sum + (client.hashrate || 0), 0);
+    return allSv1Clients.reduce((sum, client) => {
+      const { hashrate } = resolveMinerHashrate(client.miner_telemetry, client.hashrate);
+      return sum + (hashrate ?? 0);
+    }, 0);
   }, [allSv1Clients]);
 
-  const translatedUserIdentities = useMemo(
-    () => new Set(
-      translatorServerChannels?.extended_channels
-        .map((channel) => normalizeUserIdentity(channel.user_identity))
-        .filter(Boolean) || []
-    ),
-    [translatorServerChannels]
-  );
+  const sv2TotalHashrate = useMemo(() => {
+    if (!sv2Clients) return undefined;
 
-  const translatedConnectionIds = useMemo(() => {
-    if (!isJdMode || !sv2Clients || translatedUserIdentities.size === 0) {
-      return new Set<number>();
-    }
-
-    const candidates = sv2Clients
-      .map((client) => {
-        const matchedExtendedChannels = client.extended_channels.filter((channel) =>
-          translatedUserIdentities.has(normalizeUserIdentity(channel.user_identity))
-        ).length;
-
-        return {
-          client_id: client.client_id,
-          matchedExtendedChannels,
-          totalExtendedChannels: client.extended_channels.length,
-        };
-      })
-      .filter((client) => client.matchedExtendedChannels > 0)
-      .sort((a, b) =>
-        b.matchedExtendedChannels - a.matchedExtendedChannels ||
-        b.totalExtendedChannels - a.totalExtendedChannels
+    return directSv2Clients.reduce((sum, client) => {
+      const { hashrate } = resolveMinerHashrate(
+        client.miner_telemetry,
+        client.total_hashrate
       );
-
-    if (candidates.length === 0) {
-      return new Set<number>();
-    }
-
-    if (candidates.length > 1) {
-      const [best, second] = candidates;
-      const ambiguous =
-        best.matchedExtendedChannels === second.matchedExtendedChannels &&
-        best.totalExtendedChannels === second.totalExtendedChannels;
-
-      if (ambiguous) {
-        return new Set<number>();
-      }
-    }
-
-    return new Set<number>([candidates[0].client_id]);
-  }, [isJdMode, sv2Clients, translatedUserIdentities]);
+      return sum + (hashrate ?? 0);
+    }, 0);
+  }, [directSv2Clients, sv2Clients]);
 
   // All worker flows are normalized into the shared downstream worker table.
   const downstreamWorkers = useMemo<DownstreamWorkerRow[]>(() => {
     if (!sv2Clients) return [];
 
-    return sv2Clients.flatMap((client) => [
-      ...client.extended_channels.map((channel) => ({
-        connection_id: client.client_id,
-        channel_id: channel.channel_id,
-        channel_type: translatedConnectionIds.has(client.client_id)
-          ? 'sv1' as const
-          : 'sv2_extended' as const,
-        user_identity: channel.user_identity,
-        estimated_hashrate: channel.nominal_hashrate,
-        best_diff: channel.best_diff,
-      })),
-      ...client.standard_channels.map((channel) => ({
-        connection_id: client.client_id,
-        channel_id: channel.channel_id,
-        channel_type: 'sv2_standard' as const,
-        user_identity: channel.user_identity,
-        estimated_hashrate: channel.nominal_hashrate,
-        best_diff: channel.best_diff,
-      })),
-    ]);
-  }, [sv2Clients, translatedConnectionIds]);
+    return directSv2Clients.flatMap((client) => [
+      ...client.extended_channels.map((channel) => {
+        const resolvedHashrate = resolveMinerHashrate(
+          client.miner_telemetry,
+          channel.nominal_hashrate
+        );
 
-  const downstreamWorkerCount = poolGlobal?.sv2_clients?.total_channels || downstreamWorkers.length;
-  // Hide the internal Translator->JDC hop by counting translated rows as user-facing
-  // worker connections and direct SV2 clients by unique downstream connection ID.
+        return {
+          connection_id: client.client_id,
+          channel_id: channel.channel_id,
+          channel_type: 'sv2_extended' as const,
+          user_identity: channel.user_identity,
+          management_ip: client.management_ip,
+          miner_telemetry_status: client.miner_telemetry_status,
+          miner_telemetry: client.miner_telemetry,
+          client_kind: client.client_kind,
+          estimated_hashrate: resolvedHashrate.hashrate,
+          hashrate_source: resolvedHashrate.source,
+          best_diff: channel.best_diff,
+        };
+      }),
+      ...client.standard_channels.map((channel) => {
+        const resolvedHashrate = resolveMinerHashrate(
+          client.miner_telemetry,
+          channel.nominal_hashrate
+        );
+
+        return {
+          connection_id: client.client_id,
+          channel_id: channel.channel_id,
+          channel_type: 'sv2_standard' as const,
+          user_identity: channel.user_identity,
+          management_ip: client.management_ip,
+          miner_telemetry_status: client.miner_telemetry_status,
+          miner_telemetry: client.miner_telemetry,
+          client_kind: client.client_kind,
+          estimated_hashrate: resolvedHashrate.hashrate,
+          hashrate_source: resolvedHashrate.source,
+          best_diff: channel.best_diff,
+        };
+      }),
+    ]);
+  }, [directSv2Clients, sv2Clients]);
+
+  const directSv2WorkerCount = downstreamWorkers.length;
+  const jdWorkerCount = directSv2WorkerCount + sv1TotalClients;
+  const jdActiveWorkerCount = directSv2WorkerCount + sv1ActiveCount;
+  const jdClientChannelCount = directSv2WorkerCount + sv1ActiveCount;
   const userFacingDownstreamConnectionCount = useMemo(() => {
     if (!isJdMode) {
       return 0;
     }
 
-    const directSv2ConnectionIds = new Set<number>();
-    let translatedWorkerConnections = 0;
-
-    downstreamWorkers.forEach((worker) => {
-      if (worker.channel_type === 'sv1') {
-        translatedWorkerConnections += 1;
-        return;
-      }
-
-      directSv2ConnectionIds.add(worker.connection_id);
-    });
-
-    return directSv2ConnectionIds.size + translatedWorkerConnections;
-  }, [downstreamWorkers, isJdMode]);
-  const totalWorkers = isJdMode ? downstreamWorkerCount : sv1TotalClients;
-  const activeWorkers = isJdMode ? downstreamWorkerCount : sv1ActiveCount;
-  const workerTableLoading = isJdMode ? isSv2ClientsLoading : sv1Loading;
+    return new Set(downstreamWorkers.map((worker) => worker.connection_id)).size + sv1TotalClients;
+  }, [downstreamWorkers, isJdMode, sv1TotalClients]);
+  const totalWorkers = isJdMode ? jdWorkerCount : sv1TotalClients;
+  const activeWorkers = isJdMode ? jdActiveWorkerCount : sv1ActiveCount;
+  const workerTableLoading = isJdMode ? (isSv2ClientsLoading || sv1Loading) : sv1Loading;
 
   // Total hashrate:
-  // - JD mode: from SV2 client channels (poolGlobal.sv2_clients.total_hashrate)
-  // - Translator-only mode: from SV1 clients (poolGlobal.sv1_clients.total_hashrate or calculated)
+  // - JD mode: from SV2 client telemetry when available, falling back to vardiff totals
+  // - Translator-only mode: from SV1 client telemetry when available, falling back to vardiff totals
   const totalHashrate = isJdMode 
-    ? (poolGlobal?.sv2_clients?.total_hashrate || 0)
-    : (poolGlobal?.sv1_clients?.total_hashrate || sv1TotalHashrate);
+    ? (sv2Clients && sv1Data
+        ? (sv2TotalHashrate ?? 0) + sv1TotalHashrate
+        : (poolGlobal?.sv2_clients?.total_hashrate ?? 0))
+    : (sv1Data ? sv1TotalHashrate : (poolGlobal?.sv1_clients?.total_hashrate ?? 0));
 
   const totalClientChannels = isJdMode 
-    ? downstreamWorkerCount
+    ? jdClientChannelCount
     : sv1ActiveCount;
 
   // Scope hashrate history to the active pool + mode so stale samples from a
@@ -317,7 +295,7 @@ export function UnifiedDashboard() {
     if (isJdMode) {
       if (!sv2Clients) return [];
 
-      return sv2Clients.flatMap((client) => [
+      return directSv2Clients.flatMap((client) => [
         ...client.extended_channels.map((channel) => ({
           key: `jdc:${client.client_id}:extended:${channel.channel_id}:${channel.user_identity}`,
           value: channel.blocks_found,
@@ -341,13 +319,13 @@ export function UnifiedDashboard() {
         value: channel.blocks_found,
       })),
     ];
-  }, [isJdMode, serverChannels, sv2Clients]);
+  }, [directSv2Clients, isJdMode, serverChannels, sv2Clients]);
 
   const bestDiffEntries = useMemo(() => {
     if (isJdMode) {
       if (!sv2Clients) return [];
 
-      return sv2Clients.flatMap((client) => [
+      return directSv2Clients.flatMap((client) => [
         ...client.extended_channels.map((channel) => ({
           key: `jdc:${client.client_id}:extended:${channel.channel_id}:${channel.user_identity}`,
           value: channel.best_diff,
@@ -371,7 +349,7 @@ export function UnifiedDashboard() {
         value: channel.best_diff,
       })),
     ];
-  }, [isJdMode, serverChannels, sv2Clients]);
+  }, [directSv2Clients, isJdMode, serverChannels, sv2Clients]);
 
   const shareStatsEntries = useMemo(() => {
     if (!serverChannels) return [];
@@ -403,7 +381,7 @@ export function UnifiedDashboard() {
   
   // Number of client channels (for best diff subtitle)
   const clientChannelCount = isJdMode 
-    ? downstreamWorkerCount
+    ? jdClientChannelCount
     : sv1ActiveCount;
   const bestDiffSubtitle = clientChannelCount > 0
     ? `from ${clientChannelCount} client channel(s)`
@@ -420,35 +398,61 @@ export function UnifiedDashboard() {
 
   type DashboardWorkerRow = DownstreamWorkerRow & { search_text: string };
 
+  const sv1WorkerRows = useMemo<DashboardWorkerRow[]>(() => {
+    return allSv1Clients.map((client) => {
+      const resolvedHashrate = resolveMinerHashrate(client.miner_telemetry, client.hashrate);
+
+      return {
+        connection_id: client.client_id,
+        channel_id: client.channel_id ?? null,
+        channel_type: 'sv1' as ChannelType,
+        user_identity: client.user_identity,
+        management_ip: client.management_ip,
+        miner_telemetry_status: client.miner_telemetry_status,
+        miner_telemetry: client.miner_telemetry,
+        estimated_hashrate: resolvedHashrate.hashrate,
+        hashrate_source: resolvedHashrate.source,
+        best_diff: null,
+        search_text: [
+          client.authorized_worker_name || '',
+          client.user_identity,
+          client.management_ip || '',
+          client.miner_telemetry_status || '',
+          client.miner_telemetry?.make || '',
+          client.miner_telemetry?.model || '',
+          client.miner_telemetry?.firmware_version || '',
+          client.client_id.toString(),
+          client.channel_id?.toString() || '',
+          'sv1',
+        ].join(' ').toLowerCase(),
+      };
+    });
+  }, [allSv1Clients]);
+
   const dashboardWorkers = useMemo<DashboardWorkerRow[]>(() => {
     if (isJdMode) {
-      return downstreamWorkers.map((worker) => ({
-        ...worker,
-        search_text: [
-          worker.user_identity,
-          worker.connection_id.toString(),
-          worker.channel_id?.toString() || '',
-          worker.channel_type,
-        ].join(' ').toLowerCase(),
-      }));
+      return [
+        ...downstreamWorkers.map((worker) => ({
+          ...worker,
+          search_text: [
+            worker.user_identity,
+            worker.management_ip || '',
+            worker.miner_telemetry_status || '',
+            worker.miner_telemetry?.make || '',
+            worker.miner_telemetry?.model || '',
+            worker.miner_telemetry?.firmware_version || '',
+            worker.client_kind || '',
+            worker.connection_id.toString(),
+            worker.channel_id?.toString() || '',
+            worker.channel_type,
+          ].join(' ').toLowerCase(),
+        })),
+        ...sv1WorkerRows,
+      ];
     }
 
-    return allSv1Clients.map((client) => ({
-      connection_id: client.client_id,
-      channel_id: client.channel_id ?? null,
-      channel_type: 'sv1' as ChannelType,
-      user_identity: client.user_identity,
-      estimated_hashrate: client.hashrate ?? null,
-      best_diff: null,
-      search_text: [
-        client.authorized_worker_name || '',
-        client.user_identity,
-        client.client_id.toString(),
-        client.channel_id?.toString() || '',
-        'sv1',
-      ].join(' ').toLowerCase(),
-    }));
-  }, [isJdMode, downstreamWorkers, allSv1Clients]);
+    return sv1WorkerRows;
+  }, [isJdMode, downstreamWorkers, sv1WorkerRows]);
 
   const filteredWorkers = useMemo(() => {
     let list = dashboardWorkers;
@@ -574,12 +578,13 @@ export function UnifiedDashboard() {
       {/* Hero Stats Section */}
       <div className={isSovereignSolo ? 'grid gap-4 md:grid-cols-2 lg:grid-cols-4' : 'grid gap-4 md:grid-cols-2 lg:grid-cols-5'}>
         <StatCard
-          title="Total Estimated Hashrate"
+          title="Total Hashrate"
           value={formatHashrate(totalHashrate)}
           subtitle={`${totalClientChannels} client channel(s)`}
           info={
             <InfoPopover>
-              Estimated hashrate sampled every 5 seconds. May take a few minutes to reflect your miner's actual output.
+              Uses miner-reported telemetry when available. Otherwise falls back to the proxy's
+              vardiff estimate from submitted shares.
             </InfoPopover>
           }
         />
@@ -718,7 +723,8 @@ export function UnifiedDashboard() {
         onTimeRangeChange={setTimeRange}
         info={
           <InfoPopover>
-            Estimated hashrate sampled every 5 seconds. May take a few minutes to reflect your miner's actual output.
+            Uses miner-reported telemetry when available. Otherwise falls back to the proxy's
+            vardiff estimate from submitted shares.
           </InfoPopover>
         }
       />

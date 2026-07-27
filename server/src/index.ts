@@ -17,6 +17,7 @@ import {
   normalizeBitcoinCoreVersion,
   TRANSLATOR_MONITORING_PORT,
   JDC_MONITORING_PORT,
+  getMinerTelemetryCidrError,
 } from '@sv2-ui/shared';
 import { BITCOIN_ERROR_MESSAGES } from './messages.js';
 import {
@@ -159,6 +160,11 @@ function getSetupValidationError(data: SetupData): string | null {
 
   if ((data.fallbackPools?.length ?? 0) > MAX_FALLBACK_POOLS) {
     return `No more than ${MAX_FALLBACK_POOLS} fallback pools may be configured`;
+  }
+
+  const minerTelemetryCidrError = getMinerTelemetryCidrError(data.miner_telemetry_cidr);
+  if (minerTelemetryCidrError) {
+    return minerTelemetryCidrError;
   }
 
   const pools = configuredPools(data);
