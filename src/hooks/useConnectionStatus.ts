@@ -71,7 +71,7 @@ export function useConnectionStatus(): ConnectionStatus {
 
   return {
     status,
-    statusLabel: isSovereignSolo ? 'Mining services healthy' : null,
+    statusLabel: isSovereignSolo ? 'Sovereign Solo' : null,
     poolName: isPoolConnected ? (poolName ?? null) : null,
     uptime:   isPoolConnected ? (poolGlobal?.uptime_secs ?? 0) : 0,
   };

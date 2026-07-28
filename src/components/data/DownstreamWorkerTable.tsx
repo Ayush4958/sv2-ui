@@ -198,24 +198,9 @@ export function DownstreamWorkerTable({
         <Table className="min-w-[1680px]">
           <TableHeader className="bg-muted/30">
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[132px] cursor-pointer select-none whitespace-nowrap" onClick={() => onSort('connection_id')}>
+              <TableHead className="cursor-pointer select-none whitespace-nowrap" onClick={() => onSort('channel_type')}>
                 <span className="flex items-center gap-1 whitespace-nowrap hover:text-foreground transition-colors">
-                  Connection Id
-                  <SortIcon column="connection_id" sortKey={sortKey} sortDir={sortDir} />
-                  <InfoPopover>
-                    Worker channels with the same connection ID belong to the same downstream
-                    connection.
-                  </InfoPopover>
-                </span>
-              </TableHead>
-              <TableHead className="w-[120px] cursor-pointer select-none whitespace-nowrap" onClick={() => onSort('channel_id')}>
-                <span className="flex items-center gap-1 whitespace-nowrap hover:text-foreground transition-colors">
-                  Channel Id <SortIcon column="channel_id" sortKey={sortKey} sortDir={sortDir} />
-                </span>
-              </TableHead>
-              <TableHead className="w-[220px] cursor-pointer select-none whitespace-nowrap" onClick={() => onSort('channel_type')}>
-                <span className="flex items-center gap-1 whitespace-nowrap hover:text-foreground transition-colors">
-                  Channel Type <SortIcon column="channel_type" sortKey={sortKey} sortDir={sortDir} />
+                  Connection Type <SortIcon column="channel_type" sortKey={sortKey} sortDir={sortDir} />
                 </span>
               </TableHead>
               <TableHead className="cursor-pointer select-none" onClick={() => onSort('identity')}>
@@ -223,15 +208,6 @@ export function DownstreamWorkerTable({
                   Username / Identity <SortIcon column="identity" sortKey={sortKey} sortDir={sortDir} />
                 </span>
               </TableHead>
-              <TableHead className="whitespace-nowrap">Management IP</TableHead>
-              <TableHead className="whitespace-nowrap">Telemetry</TableHead>
-              <TableHead className="whitespace-nowrap">Miner</TableHead>
-              <TableHead className="whitespace-nowrap">Firmware</TableHead>
-              <TableHead className="whitespace-nowrap">State</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Temp</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Power</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Efficiency</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Uptime</TableHead>
               <TableHead className="text-right cursor-pointer select-none" onClick={() => onSort('estimated_hashrate')}>
                 <span className="flex items-center justify-end gap-1 hover:text-foreground transition-colors">
                   Hashrate
@@ -252,17 +228,20 @@ export function DownstreamWorkerTable({
                   </span>
                 </TableHead>
               )}
+              <TableHead className="whitespace-nowrap">Telemetry</TableHead>
+              <TableHead className="whitespace-nowrap">Management IP</TableHead>
+              <TableHead className="whitespace-nowrap">Miner</TableHead>
+              <TableHead className="whitespace-nowrap">Firmware</TableHead>
+              <TableHead className="whitespace-nowrap">State</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Temp</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Power</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Efficiency</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Uptime</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {workers.map((worker) => (
               <TableRow key={`${worker.connection_id}-${worker.channel_type}-${worker.channel_id ?? 'na'}-${worker.identity}`} className="hover:bg-muted/20 group">
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {worker.connection_id}
-                </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {worker.channel_id ?? '-'}
-                </TableCell>
                 <TableCell>
                   <span
                     className={cn(
@@ -276,9 +255,14 @@ export function DownstreamWorkerTable({
                 <TableCell className="text-muted-foreground">
                   {worker.identity || '-'}
                 </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-                  {worker.management_ip || '-'}
+                <TableCell className="text-right font-mono font-medium whitespace-nowrap">
+                  {formatWorkerHashrate(worker)}
                 </TableCell>
+                {showBestDiff && (
+                  <TableCell className="text-right font-mono text-muted-foreground whitespace-nowrap">
+                    {worker.best_diff !== null && worker.best_diff > 0 ? formatDifficulty(worker.best_diff) : '-'}
+                  </TableCell>
+                )}
                 <TableCell
                   className={cn(
                     'text-xs whitespace-nowrap',
@@ -286,6 +270,9 @@ export function DownstreamWorkerTable({
                   )}
                 >
                   {getTelemetryStatusLabel(worker.miner_telemetry_status) || '-'}
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                  {worker.management_ip || '-'}
                 </TableCell>
                 <TableCell className="text-muted-foreground whitespace-nowrap">
                   {getMinerLabel(worker.miner_telemetry)}
@@ -313,14 +300,6 @@ export function DownstreamWorkerTable({
                 <TableCell className="text-right font-mono text-muted-foreground whitespace-nowrap">
                   {getUptimeLabel(worker.miner_telemetry)}
                 </TableCell>
-                <TableCell className="text-right font-mono font-medium whitespace-nowrap">
-                  {formatWorkerHashrate(worker)}
-                </TableCell>
-                {showBestDiff && (
-                  <TableCell className="text-right font-mono text-muted-foreground whitespace-nowrap">
-                    {worker.best_diff !== null && worker.best_diff > 0 ? formatDifficulty(worker.best_diff) : '-'}
-                  </TableCell>
-                )}
               </TableRow>
             ))}
           </TableBody>

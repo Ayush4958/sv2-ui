@@ -16,6 +16,7 @@ import {
 import {
   usePoolData,
   useSv1ClientsData,
+  useTranslatorServerChannels,
   useTranslatorHealth,
   useJdcHealth,
 } from '@/hooks/usePoolData';
@@ -94,6 +95,8 @@ export function UnifiedDashboard() {
     isLoading: poolLoading,
     isError: poolError,
   } = usePoolData(templateMode);
+  const { data: translatorServerChannels } = useTranslatorServerChannels(isJdMode);
+  const sv1ServerChannels = isJdMode ? translatorServerChannels : serverChannels;
   const isAggregatedTproxy = !isJdMode && isAggregatedTproxyPoolName(configPoolName);
 
   // SV1 clients (always from Translator)
@@ -248,14 +251,6 @@ export function UnifiedDashboard() {
   const directSv2WorkerCount = downstreamWorkers.length;
   const jdWorkerCount = directSv2WorkerCount + sv1TotalClients;
   const jdActiveWorkerCount = directSv2WorkerCount + sv1ActiveCount;
-  const jdClientChannelCount = directSv2WorkerCount + sv1ActiveCount;
-  const userFacingDownstreamConnectionCount = useMemo(() => {
-    if (!isJdMode) {
-      return 0;
-    }
-
-    return new Set(downstreamWorkers.map((worker) => worker.connection_id)).size + sv1TotalClients;
-  }, [downstreamWorkers, isJdMode, sv1TotalClients]);
   const totalWorkers = isJdMode ? jdWorkerCount : sv1TotalClients;
   const activeWorkers = isJdMode ? jdActiveWorkerCount : sv1ActiveCount;
   const workerTableLoading = isJdMode ? (isSv2ClientsLoading || sv1Loading) : sv1Loading;
@@ -268,10 +263,6 @@ export function UnifiedDashboard() {
         ? (sv2TotalHashrate ?? 0) + sv1TotalHashrate
         : (poolGlobal?.sv2_clients?.total_hashrate ?? 0))
     : (sv1Data ? sv1TotalHashrate : (poolGlobal?.sv1_clients?.total_hashrate ?? 0));
-
-  const totalClientChannels = isJdMode 
-    ? jdClientChannelCount
-    : sv1ActiveCount;
 
   // Scope hashrate history to the active pool + mode so stale samples from a
   // previous configuration are never shown after a reconfigure.
@@ -322,10 +313,21 @@ export function UnifiedDashboard() {
   }, [directSv2Clients, isJdMode, serverChannels, sv2Clients]);
 
   const bestDiffEntries = useMemo(() => {
-    if (isJdMode) {
-      if (!sv2Clients) return [];
+    const sv1BestDiffEntries = sv1ServerChannels ? [
+      ...sv1ServerChannels.extended_channels.map((channel) => ({
+        key: `translator:server:extended:${channel.channel_id}:${channel.user_identity}`,
+        value: channel.best_diff,
+      })),
+      ...sv1ServerChannels.standard_channels.map((channel) => ({
+        key: `translator:server:standard:${channel.channel_id}:${channel.user_identity}`,
+        value: channel.best_diff,
+      })),
+    ] : [];
 
-      return directSv2Clients.flatMap((client) => [
+    if (!isJdMode || !sv2Clients) return sv1BestDiffEntries;
+
+    return [
+      ...directSv2Clients.flatMap((client) => [
         ...client.extended_channels.map((channel) => ({
           key: `jdc:${client.client_id}:extended:${channel.channel_id}:${channel.user_identity}`,
           value: channel.best_diff,
@@ -334,22 +336,23 @@ export function UnifiedDashboard() {
           key: `jdc:${client.client_id}:standard:${channel.channel_id}:${channel.user_identity}`,
           value: channel.best_diff,
         })),
-      ]);
-    }
-
-    if (!serverChannels) return [];
-
-    return [
-      ...serverChannels.extended_channels.map((channel) => ({
-        key: `translator:server:extended:${channel.channel_id}:${channel.user_identity}`,
-        value: channel.best_diff,
-      })),
-      ...serverChannels.standard_channels.map((channel) => ({
-        key: `translator:server:standard:${channel.channel_id}:${channel.user_identity}`,
-        value: channel.best_diff,
-      })),
+      ]),
+      ...sv1BestDiffEntries,
     ];
-  }, [directSv2Clients, isJdMode, serverChannels, sv2Clients]);
+  }, [directSv2Clients, isJdMode, sv1ServerChannels, sv2Clients]);
+
+  const sv1BestDiffByChannelId = useMemo(() => {
+    const bestDiffByChannelId = new Map<number, number>();
+
+    if (!sv1ServerChannels) return bestDiffByChannelId;
+
+    [...sv1ServerChannels.extended_channels, ...sv1ServerChannels.standard_channels].forEach((channel) => {
+      const currentBestDiff = bestDiffByChannelId.get(channel.channel_id) ?? 0;
+      bestDiffByChannelId.set(channel.channel_id, Math.max(currentBestDiff, channel.best_diff));
+    });
+
+    return bestDiffByChannelId;
+  }, [sv1ServerChannels]);
 
   const shareStatsEntries = useMemo(() => {
     if (!serverChannels) return [];
@@ -376,18 +379,9 @@ export function UnifiedDashboard() {
   const bestDiff = usePersistentBestDifficulty(bestDiffEntries, historyConfigKey);
   const shareStats = usePersistentShareStats(shareStatsEntries, historyConfigKey);
 
-  // Number of upstream pool channels (for shares subtitle)
-  const poolChannelCount = (serverChannels?.total_extended || 0) + (serverChannels?.total_standard || 0);
-  
-  // Number of client channels (for best diff subtitle)
-  const clientChannelCount = isJdMode 
-    ? jdClientChannelCount
-    : sv1ActiveCount;
-  const bestDiffSubtitle = clientChannelCount > 0
-    ? `from ${clientChannelCount} client channel(s)`
-    : undefined;
-
-  const hasBestDiffSource = isJdMode ? !!sv2Clients : !!serverChannels;
+  const hasBestDiffSource = isJdMode
+    ? !!sv2Clients || !!sv1ServerChannels
+    : !!sv1ServerChannels;
 
   useEffect(() => {
     if (isAggregatedTproxy && sortKey === 'best_diff') {
@@ -412,7 +406,9 @@ export function UnifiedDashboard() {
         miner_telemetry: client.miner_telemetry,
         estimated_hashrate: resolvedHashrate.hashrate,
         hashrate_source: resolvedHashrate.source,
-        best_diff: null,
+        best_diff: client.channel_id === null || client.channel_id === undefined
+          ? null
+          : (sv1BestDiffByChannelId.get(client.channel_id) ?? null),
         search_text: [
           client.sv1_username,
           client.sv1_worker_name,
@@ -427,7 +423,7 @@ export function UnifiedDashboard() {
         ].join(' ').toLowerCase(),
       };
     });
-  }, [allSv1Clients]);
+  }, [allSv1Clients, sv1BestDiffByChannelId]);
 
   const dashboardWorkers = useMemo<DashboardWorkerRow[]>(() => {
     if (isJdMode) {
@@ -580,7 +576,6 @@ export function UnifiedDashboard() {
         <StatCard
           title="Total Hashrate"
           value={formatHashrate(totalHashrate)}
-          subtitle={`${totalClientChannels} client channel(s)`}
           info={
             <InfoPopover>
               Uses miner-reported telemetry when available. Otherwise falls back to the proxy's
@@ -599,11 +594,6 @@ export function UnifiedDashboard() {
                 {activeWorkers} <span className="text-muted-foreground text-lg">/ {totalWorkers}</span>
               </span>
             )
-          }
-          subtitle={
-            isJdMode
-              ? `${userFacingDownstreamConnectionCount} downstream connection(s)`
-              : `${totalWorkers - activeWorkers} offline workers`
           }
         />
 
@@ -689,22 +679,12 @@ export function UnifiedDashboard() {
 
               return <span className={colorClass}>{label}</span>;
             })()}
-            subtitle={(() => {
-              const { submitted, rejected } = shareStats;
-              if (submitted === 0) return `via ${poolChannelCount} channel(s)`;
-              const rejectionRate = (rejected / submitted) * 100;
-              const rejRateLabel = rejected === 0
-                ? '0%'
-                : `${Math.max(rejectionRate, 0.01).toFixed(2)}%`;
-              return `${submitted.toLocaleString()} submitted · ${rejected.toLocaleString()} rejected (${rejRateLabel})`;
-            })()}
           />
         )}
 
         <StatCard
           title="Best Difficulty"
           value={hasBestDiffSource ? formatDifficulty(bestDiff) : '-'}
-          subtitle={bestDiffSubtitle}
         />
         </div>
 
