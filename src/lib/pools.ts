@@ -58,7 +58,7 @@ export const SOLO_POOLS: KnownPool[] = [
   {
     id: 'ckpool',
     name: 'CKPool',
-    address: 'sv2solo.ckpool.org',
+    address: 'stratum.ckpool.org',
     port: 3336,
     authority_public_key: '9anrRNhBh7869XtNnFcCuGBRZP51E635qGbu457J5kHdszhfRc3',
     description: 'CKPool',
