@@ -60,6 +60,7 @@ function normalizePool(pool: PoolConfig | null | undefined, fallbackIdentity: st
     name: legacyPool.name ?? 'Custom Pool',
     address: legacyPool.address ?? '',
     port: legacyPool.port ?? 0,
+    jds_port: legacyPool.jds_port,
     authority_public_key: legacyPool.authority_public_key ?? '',
     user_identity: legacyPool.user_identity || fallbackIdentity,
   };
@@ -287,6 +288,9 @@ export function generateJdcConfig(data: SetupData): string | null {
     DEFAULT_SHARES_PER_MINUTE,
   ).toFixed(1);
   const shareBatchSize = '5';
+  const reservedDownstreamRollableExtranonceSize = downstreamExtranonce2Size(
+    normalizedData.translator?.downstream_extranonce2_size,
+  );
   // Fee threshold and min interval for template provider
   const feeThreshold = '1000';
   const minInterval = '5';
@@ -300,7 +304,7 @@ authority_pubkey = "${upstream.authority_public_key}"
 pool_address = "${upstream.address}"
 pool_port = ${upstream.port}
 jds_address = "${upstream.address}"
-jds_port = 3334
+jds_port = ${upstream.jds_port ?? 3334}
 user_identity = "${upstream.user_identity}"
 `).join('\n')}
 `
@@ -326,6 +330,8 @@ cert_validity_sec = 3600
 # Shares configuration
 shares_per_minute = ${sharesPerMinute}
 share_batch_size = ${shareBatchSize}
+# Extranonce bytes reserved for downstream miners
+reserved_downstream_rollable_extranonce_size = ${reservedDownstreamRollableExtranonceSize}
 
 # JDC mode: FULLTEMPLATE, COINBASEONLY, or SOLOMINING
 mode = "${isSovereignSolo ? 'SOLOMINING' : 'FULLTEMPLATE'}"

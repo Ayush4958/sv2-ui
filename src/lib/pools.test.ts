@@ -16,14 +16,14 @@ test('CKPool preset matches its SV2 solo endpoint', () => {
   assert.ok(ckPool);
   assert.deepEqual(knownPoolToConfig(ckPool), {
     name: 'CKPool',
-    address: 'sv2solo.ckpool.org',
+    address: 'stratum.ckpool.org',
     port: 3336,
     authority_public_key: '9anrRNhBh7869XtNnFcCuGBRZP51E635qGbu457J5kHdszhfRc3',
     user_identity: '',
   });
   assert.equal(
     `stratum2+tcp://${ckPool.address}:${ckPool.port}/${ckPool.authority_public_key}`,
-    'stratum2+tcp://sv2solo.ckpool.org:3336/9anrRNhBh7869XtNnFcCuGBRZP51E635qGbu457J5kHdszhfRc3',
+    'stratum2+tcp://stratum.ckpool.org:3336/9anrRNhBh7869XtNnFcCuGBRZP51E635qGbu457J5kHdszhfRc3',
   );
   assert.equal(isValidPoolAuthorityPubkey(ckPool.authority_public_key), true);
   assert.equal(ckPool.monogram, 'CK');
