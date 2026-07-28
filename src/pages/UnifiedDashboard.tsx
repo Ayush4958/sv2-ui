@@ -679,6 +679,15 @@ export function UnifiedDashboard() {
 
               return <span className={colorClass}>{label}</span>;
             })()}
+            subtitle={(() => {
+              const { submitted, rejected } = shareStats;
+              if (submitted === 0) return undefined;
+              const rejectionRate = (rejected / submitted) * 100;
+              const rejRateLabel = rejected === 0
+                ? '0%'
+                : `${Math.max(rejectionRate, 0.01).toFixed(2)}%`;
+              return `${submitted.toLocaleString()} submitted · ${rejected.toLocaleString()} rejected (${rejRateLabel})`;
+            })()}
           />
         )}
 
