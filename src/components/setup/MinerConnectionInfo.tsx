@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { TRANSLATOR_PORT, JDC_PORT, JDC_AUTHORITY_PUBLIC_KEY } from '@/lib/ports';
 import { useHostEnv } from '@/hooks/useHostEnv';
+import { InfoPopover } from '@/components/ui/info-popover';
 
 function copyWithSelectionFallback(text: string): boolean {
   const textArea = document.createElement('textarea');
@@ -82,6 +83,22 @@ function CopyableAddress({ address }: { address: string }) {
   );
 }
 
+function HostHint() {
+  return (
+    <InfoPopover ariaLabel="Local network IP help">
+      Replace{' '}
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">
+        &lt;your-machine-ip&gt;
+      </code>{' '}
+      with your local network IP (for example,{' '}
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">
+        192.168.1.100
+      </code>
+      ).
+    </InfoPopover>
+  );
+}
+
 interface MinerConnectionInfoProps {
   isJdMode: boolean;
   centered?: boolean;
@@ -92,12 +109,6 @@ export function MinerConnectionInfo({ isJdMode, centered = false }: MinerConnect
   const host = stratumHost ?? '<your-machine-ip>';
   const translatorUrl = `stratum+tcp://${host}:${TRANSLATOR_PORT}`;
   const jdcUrl = `stratum2+tcp://${host}:${JDC_PORT}/${JDC_AUTHORITY_PUBLIC_KEY}`;
-
-  const hint = (
-    <p className="text-xs text-muted-foreground">
-      Replace <code className="font-mono bg-muted px-1 py-0.5 rounded text-foreground">&lt;your-machine-ip&gt;</code> with your local network IP (e.g. <code className="font-mono bg-muted px-1 py-0.5 rounded text-foreground">192.168.1.100</code>).
-    </p>
-  );
 
   // When only one card is shown (SV1-only mode) it should stretch to full width.
   // In JD mode two cards sit side-by-side on md+ screens.
@@ -110,18 +121,20 @@ export function MinerConnectionInfo({ isJdMode, centered = false }: MinerConnect
   return (
     <div className={wrapperClass}>
       <div className={`p-4 rounded-xl border border-border bg-card space-y-2${centered ? ' w-full max-w-sm' : ''}`}>
-        <div className="font-semibold text-sm">SV1 Firmware</div>
-        <div className="text-xs text-muted-foreground">Point to the Translator Proxy</div>
+        <div className="flex items-center gap-1.5">
+          <div className="font-semibold text-sm">SV1 Firmware</div>
+          {!stratumHost && <HostHint />}
+        </div>
         <CopyableAddress address={translatorUrl} />
-        {!stratumHost && hint}
       </div>
 
       {isJdMode && (
         <div className={`p-4 rounded-xl border border-border bg-card space-y-2${centered ? ' w-full max-w-sm' : ''}`}>
-          <div className="font-semibold text-sm">SV2 Firmware</div>
-          <div className="text-xs text-muted-foreground">Point directly to the JD Client</div>
+          <div className="flex items-center gap-1.5">
+            <div className="font-semibold text-sm">SV2 Firmware</div>
+            {!stratumHost && <HostHint />}
+          </div>
           <CopyableAddress address={jdcUrl} />
-          {!stratumHost && hint}
         </div>
       )}
     </div>
