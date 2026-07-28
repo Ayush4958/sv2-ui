@@ -325,7 +325,6 @@ export interface StandardChannelInfo {
  * Information about a single SV1 client connection
  */
 export interface Sv1ClientInfo {
-  authorized_worker_name: string;
   /**
      * @minimum 0
      * @nullable
@@ -347,8 +346,9 @@ export interface Sv1ClientInfo {
   miner_telemetry?: null | MinerTelemetry;
   miner_telemetry_status?: null | MinerTelemetryStatus;
   stable_hashrate: boolean;
+  sv1_username: string;
+  sv1_worker_name: string;
   target_hex: string;
-  user_identity: string;
   /** @nullable */
   version_rolling_mask?: string | null;
   /** @nullable */
