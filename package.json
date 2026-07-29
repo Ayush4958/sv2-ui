@@ -19,6 +19,7 @@
     "lint": "eslint . --max-warnings 0",
     "test": "node --test --import tsx src/**/*.test.ts",
     "test:server": "npm run test --prefix server",
+    "check:sv2-app-config": "node --import tsx server/src/sv2-app-config-compatibility.ts",
     "test:all": "npm run test && npm run test:server",
     "typecheck": "tsc --noEmit",
     "generate:types": "orval"
@@ -29,7 +30,6 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.62.0",
     "@sv2-ui/shared": "^0.1.0",
-    "bitcoinjs-lib": "^7.0.1",
     "bs58check": "^4.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -38,7 +38,6 @@
     "react-dom": "^18.3.1",
     "recharts": "^2.14.1",
     "tailwind-merge": "^2.6.0",
-    "tiny-secp256k1": "^2.2.4",
     "wouter": "^3.3.5"
   },
   "devDependencies": {

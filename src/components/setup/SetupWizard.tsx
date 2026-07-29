@@ -50,7 +50,6 @@ function computeSteps(data: SetupData): SetupStep[] {
   const isSoloMode = data.miningMode === 'solo';
   const isPoolMode = data.miningMode === 'pool';
   const isJdMode = data.mode === 'jd';
-
   const steps: SetupStep[] = ['mining-mode'];
 
   if (isSoloMode) {
@@ -124,6 +123,10 @@ export function SetupWizard() {
 
         if (targetStep && computeSteps(config).includes(targetStep)) {
           setCurrentStep(targetStep);
+        } else if (config.miningMode === 'solo' || config.miningMode === 'pool') {
+          // A generic setup review preserves the user's mining choice and
+          // begins at the next normal decision instead of clearing the form.
+          setCurrentStep('template-mode');
         }
       }
       setLoadingConfig(false);
@@ -285,7 +288,7 @@ export function SetupWizard() {
             {isReconfiguring && currentStepIndex === 1 && (
               <div className="mb-6 p-3 rounded-xl bg-warning/[0.08] text-sm text-warning flex gap-2 items-start">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
-                Reconfiguring SV2 setup — this will replace your current configuration.
+                Review your setup to continue mining. Your saved settings are prefilled.
               </div>
             )}
             {currentStep === 'template-mode'  && <TemplateModeSelection {...stepProps} />}

@@ -1,4 +1,5 @@
 import bs58check from 'bs58check';
+import { isTomlSafeIdentifier } from '@sv2-ui/shared';
 import type { PoolConfig } from './types.js';
 
 const MAX_POOL_NAME_LENGTH = 128;
@@ -7,16 +8,10 @@ const MAX_AUTHORITY_KEY_LENGTH = 128;
 const MAX_IDENTITY_LENGTH = 512;
 export const MAX_FALLBACK_POOLS = 16;
 
-// These characters can escape or terminate a generated TOML basic string.
-// eslint-disable-next-line no-control-regex
-const TOML_UNSAFE_CHARS = /["\\\u0000-\u001F\u007F]/;
-
 function isSafeBoundedString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' &&
-    value.length > 0 &&
     value.length <= maxLength &&
-    value === value.trim() &&
-    !TOML_UNSAFE_CHARS.test(value);
+    isTomlSafeIdentifier(value);
 }
 
 function isValidAuthorityPublicKey(value: unknown): value is string {

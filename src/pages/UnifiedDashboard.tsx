@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'wouter';
-import { AlertTriangle, Search, Play } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Search, Play, Trash2 } from 'lucide-react';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MinerConnectionInfo } from '@/components/setup/MinerConnectionInfo';
 import { Shell } from '@/components/layout/Shell';
@@ -30,6 +31,7 @@ import { isAggregatedTproxyPoolName } from '@/components/setup/poolRules';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useLogDiagnostics } from '@/hooks/useLogDiagnostics';
+import { clearDashboardClientState } from '@/lib/dashboardState';
 import { resolveMinerHashrate } from '@/lib/minerTelemetry';
 import { formatHashrate, formatDifficulty, formatNumber } from '@/lib/utils';
 import type { Sv1ClientInfo } from '@/types/api';
@@ -63,11 +65,15 @@ const SETUP_TARGET_STEP_STORAGE_KEY = 'sv2-ui-setup-target-step';
  * - Username / Identity
  */
 export function UnifiedDashboard() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<DownstreamWorkerSortKey>('connection_id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [timeRange, setTimeRange] = useState<TimeRange>('5m');
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   const itemsPerPage = 15;
 
   // Get configured template mode from setup status
@@ -79,6 +85,7 @@ export function UnifiedDashboard() {
     miningMode,
     mode: templateMode,
     poolName: configPoolName,
+    configurationIssues,
   } = useSetupStatus();
 
   // Header connection status (shared with Settings via hook)
@@ -114,6 +121,9 @@ export function UnifiedDashboard() {
   const jdcDown           = isJdMode && !jdcHealthLoading && !jdcHealthy;
   const showError         = poolError || translatorDown || jdcDown;
   const configuredButStopped = isOrchestrated && isConfigured && !isRunning;
+  const configurationIssue = configurationIssues[0] ?? null;
+  const canReviewConfiguration = configurationIssue?.code !== 'saved-setup-unavailable';
+  const canResetConfiguration = configurationIssue?.code === 'saved-setup-unavailable';
 
   // log-derived diagnostics from the API
   const { data: logDiagnostics } = useLogDiagnostics();
@@ -162,6 +172,30 @@ export function UnifiedDashboard() {
         setStartError('Failed to start mining.');
       }
       setIsStarting(false);
+    }
+  };
+
+  const handleResetSetup = async () => {
+    setIsResetting(true);
+    setResetError(null);
+
+    try {
+      const response = await fetch('/api/reset', { method: 'POST' });
+      const responseData = await response.json().catch(() => ({})) as {
+        error?: string;
+        success?: boolean;
+      };
+
+      if (!response.ok || responseData.success === false) {
+        throw new Error(responseData.error || 'Could not reset setup.');
+      }
+
+      clearDashboardClientState(queryClient);
+      window.location.href = '/setup';
+    } catch (error) {
+      console.error('Reset setup failed:', error);
+      setResetError(error instanceof Error ? error.message : 'Could not reset setup.');
+      setIsResetting(false);
     }
   };
 
@@ -494,8 +528,93 @@ export function UnifiedDashboard() {
       uptime={uptime}
     >
 
+      {/* Configuration recovery banner. This takes precedence over starting
+          services because the backend deliberately keeps the stack stopped
+          until all required setup inputs are available. */}
+      {configurationIssue && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm text-amber-500 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex flex-col gap-1">
+              <span className="font-medium">{configurationIssue.title}</span>
+              <span>{configurationIssue.message}</span>
+            </div>
+          </div>
+          {canReviewConfiguration && (
+            <Link
+              href="/setup"
+              className="inline-flex h-9 shrink-0 items-center justify-center rounded-full bg-amber-500 px-4 font-medium text-black transition-colors hover:bg-amber-400 sm:ml-4"
+            >
+              Continue setup
+            </Link>
+          )}
+          {canResetConfiguration && (
+            <button
+              type="button"
+              onClick={() => {
+                setResetError(null);
+                setIsResetConfirmOpen(true);
+              }}
+              className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full bg-amber-500 px-4 font-medium text-black transition-colors hover:bg-amber-400 sm:ml-4"
+            >
+              <Trash2 className="h-4 w-4" />
+              Reset setup
+            </button>
+          )}
+        </div>
+      )}
+
+      {isResetConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-setup-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-full bg-red-500/10 p-2 text-red-500">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="space-y-2">
+                <h2 id="reset-setup-title" className="text-base font-semibold">
+                  Reset setup?
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  This deletes the saved setup and generated service files. Mining services will stop, and setup will start from the beginning.
+                </p>
+                {resetError && (
+                  <p className="text-sm text-red-500">{resetError}</p>
+                )}
+              </div>
+            </div>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setIsResetConfirmOpen(false)}
+                disabled={isResetting}
+                className="inline-flex h-9 items-center justify-center rounded-full border border-border px-4 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleResetSetup}
+                disabled={isResetting}
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-full bg-red-500 px-4 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+              >
+                {isResetting && (
+                  <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                )}
+                Reset setup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Start Mining Banner (configured but stopped) */}
-      {configuredButStopped && showError && (
+      {!configurationIssue && configuredButStopped && showError && (
         <div className="flex flex-col gap-3 rounded-xl border border-primary/40 bg-primary/10 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             {autoStarting || isStarting ? (
@@ -524,7 +643,7 @@ export function UnifiedDashboard() {
       )}
 
       {/* Connection Error Banner (not configured or unknown error) */}
-      {(startError || (showError && !configuredButStopped && diagnostics.length === 0)) && (
+      {!configurationIssue && (startError || (showError && !configuredButStopped && diagnostics.length === 0)) && (
         <div className="flex items-center gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-5 py-4 text-sm text-red-500">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>

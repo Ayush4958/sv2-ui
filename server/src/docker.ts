@@ -881,6 +881,11 @@ export async function startStack(
     await startJdc(`${configDir}/jdc.toml`, socketPath, data.bitcoin.network, imageSelection.jdc);
     console.log('Waiting for JDC to initialize...');
     await new Promise(resolve => setTimeout(resolve, 3000));
+
+    const jdcStatus = await getContainerStatus(JDC_CONTAINER);
+    if (!jdcStatus || jdcStatus.status === 'stopped') {
+      throw new Error('Mining could not start. Review your setup and try again; check the logs if the problem continues.');
+    }
   }
 
   // Start Translator
