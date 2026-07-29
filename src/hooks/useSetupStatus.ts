@@ -9,6 +9,11 @@ export interface SetupStatus {
   mode: 'jd' | 'no-jd' | null;
   poolName: string | null;
   activePoolIndex: number | null;
+  configurationIssues: Array<{
+    code: string;
+    title: string;
+    message: string;
+  }>;
   containers: {
     translator: { id: string; name: string; status: string } | null;
     jdc: { id: string; name: string; status: string } | null;
@@ -78,6 +83,7 @@ export function useSetupStatus() {
     mode: status?.mode ?? null,
     poolName: status?.poolName ?? null,
     activePoolIndex: status?.activePoolIndex ?? null,
+    configurationIssues: status?.configurationIssues ?? [],
     containers: status?.containers ?? { translator: null, jdc: null },
     // User needs setup if: orchestrated mode AND not yet configured
     needsSetup: status !== null && status !== undefined && !status.configured,

@@ -4,3 +4,4 @@ export * from './images.js';
 export * from './pools.js';
 export * from './format.js';
 export * from './miner-telemetry.js';
+export * from './validation.js';

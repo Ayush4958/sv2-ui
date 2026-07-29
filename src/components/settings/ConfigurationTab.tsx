@@ -32,6 +32,7 @@ import {
   formatHashrate,
   isTomlSafeIdentifier,
 } from '@/lib/utils';
+import { clearDashboardClientState } from '@/lib/dashboardState';
 import { isPoolComplete } from '@/lib/poolValidation';
 import { isBitcoinSocketError } from '@/lib/bitcoinSocketErrors';
 import type { PoolConfig, SetupData } from '@/components/setup/types';
@@ -54,30 +55,6 @@ import {
   Check,
   X,
 } from 'lucide-react';
-
-function clearPersistedDashboardState() {
-  if (typeof window === 'undefined') return;
-
-  const prefixes = [
-    'sv2_hashrate_history:',
-    'sv2_blocks_found:',
-    'sv2_best_diff:',
-    'sv2_share_stats:',
-  ];
-
-  const keysToRemove: string[] = [];
-
-  for (let i = 0; i < window.localStorage.length; i += 1) {
-    const key = window.localStorage.key(i);
-    if (key && prefixes.some((prefix) => key.startsWith(prefix))) {
-      keysToRemove.push(key);
-    }
-  }
-
-  keysToRemove.forEach((key) => {
-    window.localStorage.removeItem(key);
-  });
-}
 
 const SETUP_TARGET_STEP_STORAGE_KEY = 'sv2-ui-setup-target-step';
 
@@ -122,22 +99,6 @@ export function ConfigurationTab() {
   const [editAdvanced, setEditAdvanced] = useState<AdvancedMiningConfigValues | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const clearDashboardClientState = () => {
-    clearPersistedDashboardState();
-
-    [
-      ['pool-global'],
-      ['server-channels'],
-      ['sv2-clients'],
-      ['sv1-clients'],
-      ['translator-server-channels'],
-      ['translator-health'],
-      ['jdc-health'],
-    ].forEach((queryKey) => {
-      queryClient.removeQueries({ queryKey });
-    });
-  };
-
   useEffect(() => {
     if (isOrchestrated && isConfigured) {
       getCurrentConfig().then(cfg => {
@@ -156,7 +117,7 @@ export function ConfigurationTab() {
   }, [saveSuccess]);
 
   const handleReconfigure = () => {
-    clearDashboardClientState();
+    clearDashboardClientState(queryClient);
     navigate('/setup');
   };
 
@@ -177,7 +138,7 @@ export function ConfigurationTab() {
       try {
         const response = await fetch('/api/reset', { method: 'POST' });
         if (response.ok) {
-          clearDashboardClientState();
+          clearDashboardClientState(queryClient);
           window.location.href = '/setup';
         }
       } catch (error) {

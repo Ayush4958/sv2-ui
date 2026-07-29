@@ -1,4 +1,5 @@
 import type { MiningMode, SetupMode, HealthStatus, PoolConfig, BitcoinConfig, JdcConfig, TranslatorConfig, SetupData } from '@sv2-ui/shared';
+import type { ServiceConfigIssue } from './service-config.js';
 
 export type { PoolConfig, BitcoinConfig, JdcConfig, TranslatorConfig, SetupData };
 
@@ -18,6 +19,7 @@ export interface StatusResponse {
   mode: SetupMode | null;
   poolName: string | null;
   activePoolIndex: number | null;
+  configurationIssues: ServiceConfigIssue[];
   containers: {
     translator: ContainerStatus | null;
     jdc: ContainerStatus | null;

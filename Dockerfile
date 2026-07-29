@@ -3,9 +3,10 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy workspace package manifests so dependency installs are cached correctly
 COPY package.json package-lock.json ./
 COPY server/package.json server/
+COPY shared/package.json shared/
 
 # Install all dependencies
 RUN npm ci

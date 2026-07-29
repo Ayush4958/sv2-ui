@@ -11,15 +11,24 @@ import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 
 import type { PoolConfig, SetupData, StatusResponse, SetupResponse } from './types.js';
-import { generateTranslatorConfig, generateJdcConfig, normalizeSetupData } from './config-generator.js';
+import { normalizeSetupData } from './config-generator.js';
 import {
-  isSupportedBitcoinCoreVersion,
-  normalizeBitcoinCoreVersion,
+  getServiceConfigDrift,
+  getSetupValidationError,
+  prepareServiceConfig,
+  reconcileServiceConfigFiles,
+  type PreparedServiceConfig,
+} from './service-config.js';
+import {
   TRANSLATOR_MONITORING_PORT,
   JDC_MONITORING_PORT,
-  getMinerTelemetryCidrError,
 } from '@sv2-ui/shared';
-import { BITCOIN_ERROR_MESSAGES } from './messages.js';
+import {
+  loadSavedState,
+  saveSavedState,
+  type SavedState,
+  SavedStateError,
+} from './state.js';
 import {
   startStack,
   stopStack,
@@ -34,7 +43,6 @@ import {
 } from './docker.js';
 import { getLogDiagnostics, getLogStreams, readCollatedLogLines } from './logs/diagnostics.js';
 import { ActivePoolTracker } from './active-pool.js';
-import { getPoolConfigError, MAX_FALLBACK_POOLS } from './pool-validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -45,19 +53,16 @@ const CONFIG_DIR = process.env.CONFIG_DIR || path.join(__dirname, '../../data/co
 const STATE_FILE = path.join(CONFIG_DIR, 'state.json');
 
 const AUTO_START_RETRY_INTERVAL_MS = 30_000;
+const AUTO_START_MIN_BACKOFF_MS = 60_000;
+const AUTO_START_MAX_BACKOFF_MS = 5 * 60_000;
 
 type StackBusyReason = 'auto-start' | 'manual';
 
 let stackBusyReason: StackBusyReason | null = null;
+let autoStartFailureCount = 0;
+let nextAutoStartAttemptAt = 0;
+let autoStartSetupReviewLogged = false;
 const activePoolTracker = new ActivePoolTracker(readContainerLogs);
-
-type SavedState = {
-  configured: boolean;
-  miningMode: 'solo' | 'pool' | null;
-  mode: 'jd' | 'no-jd' | null;
-  data: SetupData | null;
-  shouldBeRunning: boolean;
-};
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -75,65 +80,12 @@ const UI_DIR = process.env.NODE_ENV === 'production'
   : path.join(__dirname, '../../dist');
 app.use(express.static(UI_DIR));
 
-/**
- * Load saved state
- */
-function getDefaultState(): SavedState {
-  return { configured: false, miningMode: null, mode: null, data: null, shouldBeRunning: false };
-}
-
-function normalizeSavedState(state: Partial<SavedState>): SavedState {
-  const configured = state.configured ?? false;
-  return {
-    configured,
-    miningMode: state.miningMode ?? null,
-    mode: state.mode ?? null,
-    data: normalizePersistedSetupData(state.data ?? null),
-    shouldBeRunning: state.shouldBeRunning ?? configured,
-  };
-}
-
-function normalizePersistedSetupData(data: SetupData | null): SetupData | null {
-  const normalizedBitcoinData = normalizeSetupBitcoinCoreVersion(data);
-  return normalizedBitcoinData ? normalizeSetupData(normalizedBitcoinData) : null;
-}
-
-function normalizeSetupBitcoinCoreVersion(data: SetupData | null): SetupData | null {
-  if (!data?.bitcoin) {
-    return data;
-  }
-
-  return {
-    ...data,
-    bitcoin: {
-      ...data.bitcoin,
-      core_version: normalizeBitcoinCoreVersion(data.bitcoin.core_version),
-    },
-  };
-}
-
 async function loadState(): Promise<SavedState> {
-  try {
-    const content = await fs.readFile(STATE_FILE, 'utf-8');
-    return normalizeSavedState(JSON.parse(content) as Partial<SavedState>);
-  } catch {
-    return getDefaultState();
-  }
+  return loadSavedState(STATE_FILE);
 }
 
-/**
- * Save state
- */
 async function saveState(data: SetupData, shouldBeRunning = true): Promise<void> {
-  const normalizedData = normalizePersistedSetupData(data) ?? data;
-  await fs.mkdir(CONFIG_DIR, { recursive: true });
-  await fs.writeFile(STATE_FILE, JSON.stringify({
-    configured: true,
-    miningMode: normalizedData.miningMode,
-    mode: normalizedData.mode,
-    data: normalizedData,
-    shouldBeRunning,
-  }, null, 2));
+  return saveSavedState(STATE_FILE, data, shouldBeRunning);
 }
 
 function configuredPools(data: SetupData): PoolConfig[] {
@@ -147,45 +99,24 @@ function configuredPools(data: SetupData): PoolConfig[] {
   ].filter((pool): pool is PoolConfig => Boolean(pool));
 }
 
-function getSetupValidationError(data: SetupData): string | null {
-  const requiresPool = !(data.miningMode === 'solo' && data.mode === 'jd');
+/**
+ * Stop the stack, reconcile generated service configuration from saved setup
+ * data, persist that data, then start the stack. Every user-initiated start
+ * path goes through this function so updates cannot retain stale TOML files.
+ */
+async function reconcileAndStartStack(prepared: Extract<PreparedServiceConfig, { kind: 'ready' }>): Promise<void> {
+  // Preparation happens before disrupting an active stack. If saved input
+  // needs review, callers return that guidance without causing downtime.
+  await stopStack();
 
-  if (!data.mode || !data.translator || (requiresPool && !data.pool)) {
-    return BITCOIN_ERROR_MESSAGES.missingConfig;
+  const changedFiles = await reconcileServiceConfigFiles(prepared.files, CONFIG_DIR);
+  if (changedFiles.length > 0) {
+    console.log(`Reconciled generated configuration: ${changedFiles.join(', ')}`);
   }
 
-  if (data.mode === 'jd' && (!data.jdc || !data.bitcoin)) {
-    return BITCOIN_ERROR_MESSAGES.jdConfig;
-  }
-
-  if ((data.fallbackPools?.length ?? 0) > MAX_FALLBACK_POOLS) {
-    return `No more than ${MAX_FALLBACK_POOLS} fallback pools may be configured`;
-  }
-
-  const minerTelemetryCidrError = getMinerTelemetryCidrError(data.miner_telemetry_cidr);
-  if (minerTelemetryCidrError) {
-    return minerTelemetryCidrError;
-  }
-
-  const pools = configuredPools(data);
-  for (const [index, pool] of pools.entries()) {
-    const error = getPoolConfigError(pool, index === 0 ? 'Primary pool' : `Fallback pool ${index}`);
-    if (error) return error;
-  }
-
-  return null;
-}
-
-function getBitcoinCoreVersionError(data: SetupData): string | null {
-  if (data.mode !== 'jd') {
-    return null;
-  }
-
-  if (!isSupportedBitcoinCoreVersion(data.bitcoin?.core_version)) {
-    return BITCOIN_ERROR_MESSAGES.selectVersion;
-  }
-
-  return null;
+  await saveState(prepared.data, true);
+  await startStack(prepared.data, CONFIG_DIR);
+  resetAutoStartRecoveryState();
 }
 
 function isStackRunning(
@@ -221,6 +152,28 @@ function stackBusyResponse() {
   };
 }
 
+function resetAutoStartBackoff(): void {
+  autoStartFailureCount = 0;
+  nextAutoStartAttemptAt = 0;
+}
+
+function resetAutoStartRecoveryState(): void {
+  resetAutoStartBackoff();
+  autoStartSetupReviewLogged = false;
+}
+
+function recordAutoStartFailure(error: unknown): void {
+  autoStartFailureCount += 1;
+  const delayMs = Math.min(
+    AUTO_START_MIN_BACKOFF_MS * 2 ** (autoStartFailureCount - 1),
+    AUTO_START_MAX_BACKOFF_MS,
+  );
+  nextAutoStartAttemptAt = Date.now() + delayMs;
+
+  console.error('Auto-start failed:', error);
+  console.log(`Auto-start: retrying in ${Math.round(delayMs / 1000)}s.`);
+}
+
 /**
  * GET /api/health - Health check
  */
@@ -240,6 +193,10 @@ app.get('/api/status', async (_req, res) => {
     const state = await loadState();
     const containers = await getStackStatus(state.mode);
     const running = isStackRunning(state.mode, containers);
+    const prepared = state.configured ? prepareServiceConfig(state.data) : null;
+    const configurationIssues = prepared?.kind === 'needs-setup-review'
+      ? prepared.issues
+      : [];
     const isSovereignSolo = state.data?.miningMode === 'solo' && state.data?.mode === 'jd';
     const pools = state.data && !isSovereignSolo ? configuredPools(state.data) : [];
 
@@ -265,11 +222,34 @@ app.get('/api/status', async (_req, res) => {
         ? 'Sovereign Solo Mining'
         : (activePool?.name ?? null),
       activePoolIndex: activePool?.index ?? null,
+      configurationIssues,
       containers,
     };
 
     res.json(response);
   } catch (error) {
+    if (error instanceof SavedStateError) {
+      console.error('Saved setup error:', error.message);
+      const response: StatusResponse = {
+        // Treat unreadable saved data as configured to prevent the UI from
+        // redirecting to a blank setup that could overwrite it.
+        configured: true,
+        running: false,
+        autoStarting: false,
+        shouldBeRunning: false,
+        miningMode: null,
+        mode: null,
+        poolName: null,
+        activePoolIndex: null,
+        configurationIssues: [{
+          code: 'saved-setup-unavailable',
+          title: 'Your saved setup needs attention',
+          message: 'Your saved setup could not be read. It may be incomplete or corrupted, so it has not been changed. Reset setup to start over, or restore a backup.',
+        }],
+        containers: { translator: null, jdc: null },
+      };
+      return res.json(response);
+    }
     console.error('Status error:', error);
     res.status(500).json({ error: 'Failed to get status' });
   }
@@ -286,6 +266,11 @@ app.get('/api/config', async (_req, res) => {
       config: state.data,
     });
   } catch (error) {
+    if (error instanceof SavedStateError) {
+      return res.status(409).json({
+        error: 'Saved setup could not be read. It has not been changed.',
+      });
+    }
     console.error('Config error:', error);
     res.status(500).json({ error: 'Failed to get config' });
   }
@@ -368,62 +353,29 @@ app.put('/api/config', async (req, res) => {
       return res.status(400).json({ success: false, error: setupValidationError });
     }
 
-    const bitcoinCoreVersionError = getBitcoinCoreVersionError(newData);
-    if (bitcoinCoreVersionError) {
-      return res.status(400).json({ success: false, error: bitcoinCoreVersionError });
+    const prepared = prepareServiceConfig(newData, { logFailure: true });
+    if (prepared.kind !== 'ready') {
+      return res.status(400).json({
+        success: false,
+        error: prepared.issues[0]?.message ?? 'Review your setup before starting mining.',
+      });
     }
 
     await ensureDockerAvailable();
 
-    const bitcoinSocketError = await getBitcoinSocketStartupError(newData);
+    const bitcoinSocketError = await getBitcoinSocketStartupError(prepared.data);
     if (bitcoinSocketError) {
       return res.status(400).json({ success: false, error: bitcoinSocketError });
     }
 
-    await fs.mkdir(CONFIG_DIR, { recursive: true });
-
-    const translatorPath = path.join(CONFIG_DIR, 'translator.toml');
-    const jdcPath = path.join(CONFIG_DIR, 'jdc.toml');
-
-    try {
-      const translatorStat = await fs.stat(translatorPath);
-      if (translatorStat.isDirectory()) {
-        await fs.rm(translatorPath, { recursive: true });
-      }
-    } catch {
-      // translatorPath doesn't exist or isn't a directory, ignore
-    }
-
-    try {
-      const jdcStat = await fs.stat(jdcPath);
-      if (jdcStat.isDirectory()) {
-        await fs.rm(jdcPath, { recursive: true });
-      }
-    } catch {
-      // jdcPath doesn't exist or isn't a directory, ignore
-    }
-
-    const translatorConfig = generateTranslatorConfig(newData);
-    await fs.writeFile(translatorPath, translatorConfig);
-    console.log('Updated translator.toml');
-
-    if (newData.mode === 'jd') {
-      const jdcConfig = generateJdcConfig(newData);
-      if (jdcConfig) {
-        await fs.writeFile(jdcPath, jdcConfig);
-        console.log('Updated jdc.toml');
-      }
-    }
-
-    await saveState(newData);
-
-    await stopStack();
-
-    await startStack(newData, CONFIG_DIR);
+    await reconcileAndStartStack(prepared);
 
     const response: SetupResponse = { success: true };
     res.json(response);
   } catch (error) {
+    if (error instanceof SavedStateError) {
+      return res.status(409).json({ success: false, error: 'Saved setup could not be read. It has not been changed.' });
+    }
     console.error('Config update error:', error);
     const response: SetupResponse = {
       success: false,
@@ -500,78 +452,40 @@ app.post('/api/setup', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Setup configuration must be a JSON object' });
     }
 
+    // Never allow a new setup submission to silently replace unreadable saved
+    // data. Reset is an explicit, intentional recovery action.
+    await loadState();
+
     const data = normalizeSetupData(req.body as unknown as SetupData);
 
-    // Validate required fields
     const setupValidationError = getSetupValidationError(data);
     if (setupValidationError) {
       return res.status(400).json({ success: false, error: setupValidationError });
     }
 
-    const bitcoinCoreVersionError = getBitcoinCoreVersionError(data);
-    if (bitcoinCoreVersionError) {
-      return res.status(400).json({ success: false, error: bitcoinCoreVersionError });
+    const prepared = prepareServiceConfig(data, { logFailure: true });
+    if (prepared.kind !== 'ready') {
+      return res.status(400).json({
+        success: false,
+        error: prepared.issues[0]?.message ?? 'Review your setup before starting mining.',
+      });
     }
 
     await ensureDockerAvailable();
 
-    const bitcoinSocketError = await getBitcoinSocketStartupError(data);
+    const bitcoinSocketError = await getBitcoinSocketStartupError(prepared.data);
     if (bitcoinSocketError) {
       return res.status(400).json({ success: false, error: bitcoinSocketError });
     }
 
-    // Generate config files
-    await fs.mkdir(CONFIG_DIR, { recursive: true });
-
-    const translatorPath = path.join(CONFIG_DIR, 'translator.toml');
-    const jdcPath = path.join(CONFIG_DIR, 'jdc.toml');
-
-    // Remove if exists as directory (can happen from Docker volume mounts)
-    try {
-      const translatorStat = await fs.stat(translatorPath);
-      if (translatorStat.isDirectory()) {
-        await fs.rm(translatorPath, { recursive: true });
-      }
-    } catch {
-      // Doesn't exist, fine
-    }
-    try {
-      const jdcStat = await fs.stat(jdcPath);
-      if (jdcStat.isDirectory()) {
-        await fs.rm(jdcPath, { recursive: true });
-      }
-    } catch {
-      // Doesn't exist, fine
-    }
-
-    const translatorConfig = generateTranslatorConfig(data);
-    await fs.writeFile(translatorPath, translatorConfig);
-    console.log('Generated translator.toml');
-
-    if (data.mode === 'jd') {
-      const jdcConfig = generateJdcConfig(data);
-      if (jdcConfig) {
-        await fs.writeFile(jdcPath, jdcConfig);
-        console.log('Generated jdc.toml');
-      }
-    }
-
-    // Save state
-    await saveState(data);
-
-    // Stop any running containers first (graceful shutdown order matters:
-    // JDC must be stopped before Translator to avoid crashing Bitcoin Core).
-    // This is critical when switching from JD mode to solo mining — without
-    // this, the old JDC container would be left running and crash when the
-    // Translator is replaced underneath it.
-    await stopStack();
-
-    // Start the stack
-    await startStack(data, CONFIG_DIR);
+    await reconcileAndStartStack(prepared);
 
     const response: SetupResponse = { success: true };
     res.json(response);
   } catch (error) {
+    if (error instanceof SavedStateError) {
+      return res.status(409).json({ success: false, error: 'Saved setup could not be read. It has not been changed.' });
+    }
     console.error('Setup error:', error);
     const response: SetupResponse = {
       success: false,
@@ -592,8 +506,13 @@ app.post('/api/stop', async (_req, res) => {
   }
 
   try {
-    const state = await loadState();
-    if (state.configured && state.data) await saveState(state.data, false);
+    try {
+      const state = await loadState();
+      if (state.configured && state.data) await saveState(state.data, false);
+    } catch (error) {
+      if (!(error instanceof SavedStateError)) throw error;
+      console.error('Saved setup error while stopping services:', error.message);
+    }
 
     await stopStack();
     res.json({ success: true });
@@ -626,25 +545,28 @@ app.post('/api/restart', async (_req, res) => {
       return res.status(400).json({ success: false, error: setupValidationError });
     }
 
-    const bitcoinCoreVersionError = getBitcoinCoreVersionError(data);
-    if (bitcoinCoreVersionError) {
-      return res.status(400).json({ success: false, error: bitcoinCoreVersionError });
+    const prepared = prepareServiceConfig(data, { logFailure: true });
+    if (prepared.kind !== 'ready') {
+      return res.status(400).json({
+        success: false,
+        error: prepared.issues[0]?.message ?? 'Review your setup before starting mining.',
+      });
     }
 
     await ensureDockerAvailable();
 
-    const bitcoinSocketError = await getBitcoinSocketStartupError(data);
+    const bitcoinSocketError = await getBitcoinSocketStartupError(prepared.data);
     if (bitcoinSocketError) {
       return res.status(400).json({ success: false, error: bitcoinSocketError });
     }
 
-    await saveState(data, true);
-
-    await stopStack();
-    await startStack(data, CONFIG_DIR);
+    await reconcileAndStartStack(prepared);
 
     res.json({ success: true });
   } catch (error) {
+    if (error instanceof SavedStateError) {
+      return res.status(409).json({ success: false, error: 'Saved setup could not be read. It has not been changed.' });
+    }
     console.error('Restart error:', error);
     res.status(500).json({ success: false, error: 'Failed to restart stack' });
   } finally {
@@ -664,20 +586,12 @@ app.post('/api/reset', async (_req, res) => {
     // Stop containers first
     await stopStack();
 
-    // Delete state file
-    try {
-      await fs.unlink(STATE_FILE);
-    } catch {
-      // File might not exist, that's fine
-    }
-
-    // Delete config files
-    try {
-      await fs.unlink(path.join(CONFIG_DIR, 'translator.toml'));
-      await fs.unlink(path.join(CONFIG_DIR, 'jdc.toml'));
-    } catch {
-      // Files might not exist
-    }
+    // Reset is the explicit recovery action, including for unreadable setup.
+    await Promise.all([
+      fs.rm(STATE_FILE, { recursive: true, force: true }),
+      fs.rm(path.join(CONFIG_DIR, 'translator.toml'), { recursive: true, force: true }),
+      fs.rm(path.join(CONFIG_DIR, 'jdc.toml'), { recursive: true, force: true }),
+    ]);
 
     res.json({ success: true });
   } catch (error) {
@@ -749,35 +663,67 @@ app.get('*', (_req, res) => {
 });
 
 async function reconcileShouldBeRunning(): Promise<void> {
+  if (nextAutoStartAttemptAt > Date.now()) return;
   if (!beginStackOperation('auto-start')) return;
 
   try {
     const state = await loadState();
-    if (!state.configured || !state.data || !state.shouldBeRunning) return;
-
-    const containers = await getStackStatus(state.mode);
-    if (isStackRunning(state.mode, containers)) return;
-
-    console.log('Auto-start: shouldBeRunning=true and stack is stopped. Starting containers...');
-
-    const versionError = getBitcoinCoreVersionError(state.data);
-    if (versionError) {
-      console.error('Auto-start blocked:', versionError);
+    if (!state.configured || !state.data || !state.shouldBeRunning) {
+      resetAutoStartRecoveryState();
       return;
     }
 
-    if (state.data.mode === 'jd') {
-      const socketError = await getBitcoinSocketStartupError(state.data);
+    const prepared = prepareServiceConfig(state.data, { logFailure: !autoStartSetupReviewLogged });
+    const containers = await getStackStatus(state.mode);
+    const running = isStackRunning(state.mode, containers);
+
+    if (prepared.kind !== 'ready') {
+      autoStartSetupReviewLogged = true;
+      // A required setup choice is missing. Stop stale services and let the
+      // wizard reopen with saved fields prefilled.
+      if (running) {
+        console.log('Auto-start: setup review is required. Stopping the existing stack.');
+        await stopStack();
+      }
+      resetAutoStartBackoff();
+      return;
+    }
+    autoStartSetupReviewLogged = false;
+
+    // Check drift before considering a running stack healthy. This repairs an
+    // interrupted update and applies new generated configuration on boot.
+    const drift = await getServiceConfigDrift(prepared.files, CONFIG_DIR);
+    if (running && drift.length === 0) {
+      resetAutoStartRecoveryState();
+      return;
+    }
+
+    if (prepared.data.mode === 'jd') {
+      const socketError = await getBitcoinSocketStartupError(prepared.data);
       if (socketError) {
-        console.error('Auto-start blocked:', socketError);
+        recordAutoStartFailure(socketError);
         return;
       }
     }
 
-    await startStack(state.data, CONFIG_DIR);
+    if (running) {
+      console.log(`Auto-start: generated configuration changed (${drift.join(', ')}). Restarting containers...`);
+    } else {
+      console.log('Auto-start: shouldBeRunning=true and stack is stopped. Starting containers...');
+    }
+
+    await stopStack();
+    const changedFiles = await reconcileServiceConfigFiles(prepared.files, CONFIG_DIR);
+    if (changedFiles.length > 0) {
+      console.log(`Auto-start reconciled generated configuration: ${changedFiles.join(', ')}`);
+    }
+
+    await saveState(prepared.data, true);
+    await startStack(prepared.data, CONFIG_DIR);
+    resetAutoStartRecoveryState();
     console.log('Auto-start: containers started successfully');
   } catch (error) {
-    console.error('Auto-start failed:', error);
+    recordAutoStartFailure(error);
   } finally {
     finishStackOperation('auto-start');
   }

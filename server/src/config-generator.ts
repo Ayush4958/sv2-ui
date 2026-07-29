@@ -177,6 +177,13 @@ export function normalizeSetupData(data: SetupData): SetupData {
 export function generateTranslatorConfig(data: SetupData): string {
   const normalizedData = normalizeSetupData(data);
   const { pool, translator, mode, jdc } = normalizedData;
+  if (normalizedData.miningMode !== 'solo' && normalizedData.miningMode !== 'pool') {
+    throw new Error('Mining mode is required');
+  }
+  if (mode !== 'jd' && mode !== 'no-jd') {
+    throw new Error('Template mode is required');
+  }
+
   const isJdMode = mode === 'jd';
   const isSovereignSolo = normalizedData.miningMode === 'solo' && isJdMode;
   const isSoloPool = normalizedData.miningMode === 'solo' && mode === 'no-jd';

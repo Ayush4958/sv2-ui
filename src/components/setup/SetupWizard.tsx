@@ -50,7 +50,6 @@ function computeSteps(data: SetupData): SetupStep[] {
   const isSoloMode = data.miningMode === 'solo';
   const isPoolMode = data.miningMode === 'pool';
   const isJdMode = data.mode === 'jd';
-
   const steps: SetupStep[] = ['mining-mode'];
 
   if (isSoloMode) {
@@ -81,6 +80,7 @@ function computeSteps(data: SetupData): SetupStep[] {
 }
 
 const SETUP_TARGET_STEP_STORAGE_KEY = 'sv2-ui-setup-target-step';
+const SETUP_REVIEW_STORAGE_KEY = 'sv2-ui-setup-review';
 const BITCOIN_CORE_VERSION_MISMATCH_NOTICE = BITCOIN_MESSAGES.versionMismatchNotice;
 
 export function SetupWizard() {
@@ -89,6 +89,7 @@ export function SetupWizard() {
   const [currentStep, setCurrentStep] = useState<SetupStep>('mining-mode');
   const [data, setData] = useState<SetupData>(initialSetupData);
   const [isReconfiguring, setIsReconfiguring] = useState(false);
+  const [isSetupReview, setIsSetupReview] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [bitcoinSetupNotice, setBitcoinSetupNotice] = useState<string | null>(null);
   const { results: discoveredNodes, isLoading: isDiscovering, retry: retryDiscovery } = useBitcoinRpcDiscovery();
@@ -106,7 +107,10 @@ export function SetupWizard() {
         setIsReconfiguring(true);
 
         const targetStep = window.sessionStorage.getItem(SETUP_TARGET_STEP_STORAGE_KEY) as SetupStep | null;
+        const setupReviewRequested = window.sessionStorage.getItem(SETUP_REVIEW_STORAGE_KEY) === 'true';
         window.sessionStorage.removeItem(SETUP_TARGET_STEP_STORAGE_KEY);
+        window.sessionStorage.removeItem(SETUP_REVIEW_STORAGE_KEY);
+        setIsSetupReview(setupReviewRequested);
 
         if (targetStep === 'bitcoin' && config.bitcoin) {
           nextConfig = {
@@ -124,6 +128,10 @@ export function SetupWizard() {
 
         if (targetStep && computeSteps(config).includes(targetStep)) {
           setCurrentStep(targetStep);
+        } else if (setupReviewRequested && (config.miningMode === 'solo' || config.miningMode === 'pool')) {
+          // A generic setup review preserves the user's mining choice and
+          // begins at the next normal decision instead of clearing the form.
+          setCurrentStep('template-mode');
         }
       }
       setLoadingConfig(false);
@@ -285,7 +293,9 @@ export function SetupWizard() {
             {isReconfiguring && currentStepIndex === 1 && (
               <div className="mb-6 p-3 rounded-xl bg-warning/[0.08] text-sm text-warning flex gap-2 items-start">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
-                Reconfiguring SV2 setup — this will replace your current configuration.
+                {isSetupReview
+                  ? 'Review your setup to continue mining. Your saved settings are prefilled.'
+                  : 'Reconfiguring SV2 setup — this will replace your current configuration.'}
               </div>
             )}
             {currentStep === 'template-mode'  && <TemplateModeSelection {...stepProps} />}
