@@ -48,6 +48,10 @@ export type PreparedServiceConfig =
       issues: ServiceConfigIssue[];
     };
 
+type PrepareServiceConfigOptions = {
+  logFailure?: boolean;
+};
+
 function configuredPools(data: SetupData): PoolConfig[] {
   if (data.miningMode === 'solo' && data.mode === 'jd') {
     return [];
@@ -141,7 +145,10 @@ export function renderServiceConfigFiles(data: SetupData): ServiceConfigFile[] {
  * generator cannot render a complete configuration, setup is reviewed rather
  * than attempting to infer or migrate missing user choices.
  */
-export function prepareServiceConfig(data: SetupData | null): PreparedServiceConfig {
+export function prepareServiceConfig(
+  data: SetupData | null,
+  options: PrepareServiceConfigOptions = {},
+): PreparedServiceConfig {
   try {
     if (!data) throw new Error('Saved setup is empty');
 
@@ -154,7 +161,10 @@ export function prepareServiceConfig(data: SetupData | null): PreparedServiceCon
       data: normalizedData,
       files: renderServiceConfigFiles(normalizedData),
     };
-  } catch {
+  } catch (error) {
+    if (options.logFailure) {
+      console.error('Service config preparation failed:', error);
+    }
     // Keep this intentionally generic: the wizard is the recovery path for any
     // missing user choice, including future config requirements.
     return {

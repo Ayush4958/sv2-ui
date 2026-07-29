@@ -683,8 +683,8 @@ async function connectSv2UiToNetwork(): Promise<void> {
 }
 
 /**
- * Pull the latest version of an image from Docker Hub.
- * Only pulls if the image doesn't exist locally.
+ * Ensure the selected image exists locally. This avoids registry checks on
+ * every start/retry once the image has already been pulled.
  */
 async function pullImage(imageName: string): Promise<void> {
   try {

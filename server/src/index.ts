@@ -53,10 +53,15 @@ const CONFIG_DIR = process.env.CONFIG_DIR || path.join(__dirname, '../../data/co
 const STATE_FILE = path.join(CONFIG_DIR, 'state.json');
 
 const AUTO_START_RETRY_INTERVAL_MS = 30_000;
+const AUTO_START_MIN_BACKOFF_MS = 60_000;
+const AUTO_START_MAX_BACKOFF_MS = 5 * 60_000;
 
 type StackBusyReason = 'auto-start' | 'manual';
 
 let stackBusyReason: StackBusyReason | null = null;
+let autoStartFailureCount = 0;
+let nextAutoStartAttemptAt = 0;
+let autoStartSetupReviewLogged = false;
 const activePoolTracker = new ActivePoolTracker(readContainerLogs);
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -111,6 +116,7 @@ async function reconcileAndStartStack(prepared: Extract<PreparedServiceConfig, {
 
   await saveState(prepared.data, true);
   await startStack(prepared.data, CONFIG_DIR);
+  resetAutoStartRecoveryState();
 }
 
 function isStackRunning(
@@ -144,6 +150,28 @@ function stackBusyResponse() {
       ? 'Mining services are already starting. Please wait.'
       : 'Mining services are busy. Please wait.',
   };
+}
+
+function resetAutoStartBackoff(): void {
+  autoStartFailureCount = 0;
+  nextAutoStartAttemptAt = 0;
+}
+
+function resetAutoStartRecoveryState(): void {
+  resetAutoStartBackoff();
+  autoStartSetupReviewLogged = false;
+}
+
+function recordAutoStartFailure(error: unknown): void {
+  autoStartFailureCount += 1;
+  const delayMs = Math.min(
+    AUTO_START_MIN_BACKOFF_MS * 2 ** (autoStartFailureCount - 1),
+    AUTO_START_MAX_BACKOFF_MS,
+  );
+  nextAutoStartAttemptAt = Date.now() + delayMs;
+
+  console.error('Auto-start failed:', error);
+  console.log(`Auto-start: retrying in ${Math.round(delayMs / 1000)}s.`);
 }
 
 /**
@@ -325,7 +353,7 @@ app.put('/api/config', async (req, res) => {
       return res.status(400).json({ success: false, error: setupValidationError });
     }
 
-    const prepared = prepareServiceConfig(newData);
+    const prepared = prepareServiceConfig(newData, { logFailure: true });
     if (prepared.kind !== 'ready') {
       return res.status(400).json({
         success: false,
@@ -435,7 +463,7 @@ app.post('/api/setup', async (req, res) => {
       return res.status(400).json({ success: false, error: setupValidationError });
     }
 
-    const prepared = prepareServiceConfig(data);
+    const prepared = prepareServiceConfig(data, { logFailure: true });
     if (prepared.kind !== 'ready') {
       return res.status(400).json({
         success: false,
@@ -517,7 +545,7 @@ app.post('/api/restart', async (_req, res) => {
       return res.status(400).json({ success: false, error: setupValidationError });
     }
 
-    const prepared = prepareServiceConfig(data);
+    const prepared = prepareServiceConfig(data, { logFailure: true });
     if (prepared.kind !== 'ready') {
       return res.status(400).json({
         success: false,
@@ -635,35 +663,45 @@ app.get('*', (_req, res) => {
 });
 
 async function reconcileShouldBeRunning(): Promise<void> {
+  if (nextAutoStartAttemptAt > Date.now()) return;
   if (!beginStackOperation('auto-start')) return;
 
   try {
     const state = await loadState();
-    if (!state.configured || !state.data || !state.shouldBeRunning) return;
+    if (!state.configured || !state.data || !state.shouldBeRunning) {
+      resetAutoStartRecoveryState();
+      return;
+    }
 
-    const prepared = prepareServiceConfig(state.data);
+    const prepared = prepareServiceConfig(state.data, { logFailure: !autoStartSetupReviewLogged });
     const containers = await getStackStatus(state.mode);
     const running = isStackRunning(state.mode, containers);
 
     if (prepared.kind !== 'ready') {
+      autoStartSetupReviewLogged = true;
       // A required setup choice is missing. Stop stale services and let the
       // wizard reopen with saved fields prefilled.
       if (running) {
         console.log('Auto-start: setup review is required. Stopping the existing stack.');
         await stopStack();
       }
+      resetAutoStartBackoff();
       return;
     }
+    autoStartSetupReviewLogged = false;
 
     // Check drift before considering a running stack healthy. This repairs an
     // interrupted update and applies new generated configuration on boot.
     const drift = await getServiceConfigDrift(prepared.files, CONFIG_DIR);
-    if (running && drift.length === 0) return;
+    if (running && drift.length === 0) {
+      resetAutoStartRecoveryState();
+      return;
+    }
 
     if (prepared.data.mode === 'jd') {
       const socketError = await getBitcoinSocketStartupError(prepared.data);
       if (socketError) {
-        console.error('Auto-start blocked:', socketError);
+        recordAutoStartFailure(socketError);
         return;
       }
     }
@@ -682,9 +720,10 @@ async function reconcileShouldBeRunning(): Promise<void> {
 
     await saveState(prepared.data, true);
     await startStack(prepared.data, CONFIG_DIR);
+    resetAutoStartRecoveryState();
     console.log('Auto-start: containers started successfully');
   } catch (error) {
-    console.error('Auto-start failed:', error);
+    recordAutoStartFailure(error);
   } finally {
     finishStackOperation('auto-start');
   }

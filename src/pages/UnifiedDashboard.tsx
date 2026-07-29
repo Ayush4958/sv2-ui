@@ -45,6 +45,7 @@ const RANGE_DESCRIPTIONS: Record<TimeRange, string> = {
 const BITCOIN_CORE_VERSION_MISMATCH_CODE = 'jdc-bitcoin-core-unsupported-mining-interface';
 const BITCOIN_CORE_DISCONNECTED_CODE = 'jdc-bitcoin-core-disconnected';
 const SETUP_TARGET_STEP_STORAGE_KEY = 'sv2-ui-setup-target-step';
+const SETUP_REVIEW_STORAGE_KEY = 'sv2-ui-setup-review';
 
 /**
  * Unified Dashboard for the SV2 Mining Stack.
@@ -543,6 +544,7 @@ export function UnifiedDashboard() {
           {canReviewConfiguration && (
             <Link
               href="/setup"
+              onClick={() => window.sessionStorage.setItem(SETUP_REVIEW_STORAGE_KEY, 'true')}
               className="inline-flex h-9 shrink-0 items-center justify-center rounded-full bg-amber-500 px-4 font-medium text-black transition-colors hover:bg-amber-400 sm:ml-4"
             >
               Continue setup
