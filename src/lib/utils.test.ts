@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import bs58check from 'bs58check';
 
 import {
   stripWrappingQuotes,
@@ -170,4 +171,11 @@ test('getIdentifierError: returns a not-allowed-characters message for a quote',
 
 test('getIdentifierError: returns a not-allowed-characters message for a backslash', () => {
   assert.match(getIdentifierError('mi\\ner') ?? '', /not allowed|invalid|characters/i);
+});
+
+test('isValidPoolAuthorityPubkey: rejects a checksum-valid base58check blob of wrong decoded length', () => {
+  const tooShort = bs58check.encode(Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]));
+  assert.equal(isValidPoolAuthorityPubkey(tooShort), false);
+  const tooLong = bs58check.encode(Buffer.alloc(120, 0x42));
+  assert.equal(isValidPoolAuthorityPubkey(tooLong), false);
 });

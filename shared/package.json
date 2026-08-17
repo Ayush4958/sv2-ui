@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "bitcoinjs-lib": "^7.0.1",
+    "bs58check": "^4.0.0",
     "tiny-secp256k1": "^2.2.4"
   }
 }
