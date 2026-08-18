@@ -174,7 +174,7 @@ export type BitcoinSocketValidationResult =
   | { valid: false; error: string };
 
 export type BitcoinRpcValidationResult =
-  | { valid: true; chain: string; version: number; initialBlockDownload: boolean; logpath: string }
+  | { valid: true; chain: string; version: number; initialBlockDownload: boolean }
   | { valid: false; error: string };
 
 export type BitcoinRpcDiscoveryResult = {
@@ -184,7 +184,6 @@ export type BitcoinRpcDiscoveryResult = {
   chain?: string;
   version?: number;
   initialBlockDownload?: boolean;
-  logpath?: string;
   error?: string;
 };
 
@@ -229,7 +228,6 @@ export async function autoDiscoverBitcoinRpc(): Promise<BitcoinRpcDiscoveryResul
             chain: probeResult.chain,
             version: probeResult.version,
             initialBlockDownload: probeResult.initialBlockDownload,
-            logpath: probeResult.logpath,
           } : { error: probeResult.error }),
         });
       } catch (error) {
@@ -401,7 +399,6 @@ async function runBitcoinRpcProbeContainer({
           chain: parsed.chain,
           version: parsed.version,
           initialBlockDownload: parsed.initialblockdownload,
-          logpath: parsed.logpath,
         };
       } catch {
         return {

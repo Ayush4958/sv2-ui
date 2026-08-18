@@ -145,13 +145,11 @@ function makeRpcCall(method, params) {
   try {
     const blockchainInfo = await makeRpcCall('getblockchaininfo', []);
     const networkInfo = await makeRpcCall('getnetworkinfo', []);
-    const rpcInfo = await makeRpcCall('getrpcinfo', []);
 
     const result = {
       chain: blockchainInfo.chain,
       initialblockdownload: blockchainInfo.initialblockdownload,
       version: networkInfo.version,
-      logpath: rpcInfo.logpath,
     };
 
     console.log(JSON.stringify(result));
