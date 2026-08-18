@@ -49,9 +49,14 @@ export function parseSriIdentity(identity: string): SriIdentityParts {
   return { address: identity, workerName: '', donationPercent: 0 };
 }
 
+export function getWorkerNameError(workerName: string): string | null {
+  if (workerName.includes('/')) return 'Worker name must not contain "/"';
+  return null;
+}
+
 export function buildSriIdentity(address: string, workerName: string, donationPercent: number): string {
   const addr = address.trim();
-  const worker = workerName.trim();
+  const worker = workerName.trim().replace(/\//g, '');
 
   if (donationPercent >= 100) {
     return worker ? `sri/donate/${worker}` : 'sri/donate';

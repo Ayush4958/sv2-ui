@@ -10,6 +10,7 @@ import {
 import {
   buildSriIdentity,
   getPoolIdentityError,
+  getWorkerNameError,
   isSriPool,
   normalizePoolUserIdentity,
   parseSriIdentity,
@@ -105,6 +106,7 @@ function SriPoolIdentityFields({
 }) {
   const parsed = parseSriIdentity(pool.user_identity);
   const [savedPayoutAddress, setSavedPayoutAddress] = useState(parsed.address);
+  const [localWorkerName, setLocalWorkerName] = useState(parsed.workerName);
   const payoutAddress = parsed.address || savedPayoutAddress;
   const needsAddress = parsed.donationPercent < 100;
   const identityError = getPoolIdentityError(pool, 'solo', network);
@@ -121,8 +123,14 @@ function SriPoolIdentityFields({
     }
   }, [pool]);
 
+  useEffect(() => {
+    setLocalWorkerName(parsed.workerName);
+  }, [parsed.workerName]);
+
   const updateSriIdentity = (address: string, workerName: string, donationPercent: number) => {
     setSavedPayoutAddress(address);
+    setLocalWorkerName(workerName);
+    if (workerName.includes('/')) return;
     onChange({
       ...pool,
       user_identity: buildSriIdentity(address, workerName, donationPercent),
@@ -141,7 +149,7 @@ function SriPoolIdentityFields({
             id={`${idPrefix}-payout-address`}
             type="text"
             value={payoutAddress}
-            onChange={(event) => updateSriIdentity(event.target.value, parsed.workerName, parsed.donationPercent)}
+            onChange={(event) => updateSriIdentity(event.target.value, localWorkerName, parsed.donationPercent)}
             placeholder={getBitcoinAddressPlaceholder(network)}
             aria-required="true"
             autoComplete="off"
@@ -161,12 +169,13 @@ function SriPoolIdentityFields({
         <input
           id={`${idPrefix}-worker-name`}
           type="text"
-          value={parsed.workerName}
+          value={localWorkerName}
           onChange={(event) => updateSriIdentity(payoutAddress, event.target.value, parsed.donationPercent)}
           placeholder="worker1"
           autoComplete="off"
           className="w-full h-10 px-3 rounded-lg border border-input bg-background focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15 outline-none transition-all font-mono text-sm"
         />
+        <FieldError message={getWorkerNameError(localWorkerName)} />
       </div>
 
       <div>
@@ -182,7 +191,7 @@ function SriPoolIdentityFields({
             value={parsed.donationPercent}
             onChange={(event) => updateSriIdentity(
               payoutAddress,
-              parsed.workerName,
+              localWorkerName,
               snapDonation(Number(event.target.value)),
             )}
             aria-label={`Donation: ${parsed.donationPercent}%`}

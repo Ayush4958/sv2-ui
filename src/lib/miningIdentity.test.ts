@@ -4,11 +4,14 @@ import test from 'node:test';
 import type { PoolConfig } from '@sv2-ui/shared';
 import {
   SRI_POOL_AUTHORITY_KEY,
+  buildSriIdentity,
   getCompatiblePoolIdentity,
   getSriIdentityError,
   getSriIdentitySummary,
+  getWorkerNameError,
   normalizePoolPriorityIdentities,
   normalizeSriIdentity,
+  parseSriIdentity,
 } from './miningIdentity';
 
 const MAINNET_ADDRESS = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
@@ -125,4 +128,30 @@ test('normalizePoolPriorityIdentities preserves fallback payout addresses during
   );
 
   assert.equal(result[1].user_identity, MAINNET_ADDRESS);
+});
+
+test('buildSriIdentity strips "/" from worker names to prevent field injection', () => {
+  const identity = buildSriIdentity('', '25/bc1qattacker', 100);
+  const parsed = parseSriIdentity(identity);
+
+  assert.equal(parsed.donationPercent, 100);
+  assert.equal(parsed.address, '');
+  assert.ok(!parsed.workerName.includes('/'));
+});
+
+test('buildSriIdentity preserves normal worker names', () => {
+  assert.equal(
+    buildSriIdentity('bc1q...', 'worker1', 0),
+    'sri/solo/bc1q.../worker1',
+  );
+});
+
+test('getWorkerNameError rejects names containing "/"', () => {
+  assert.equal(getWorkerNameError('25/bc1qattacker'), 'Worker name must not contain "/"');
+  assert.equal(getWorkerNameError('a/b'), 'Worker name must not contain "/"');
+});
+
+test('getWorkerNameError accepts normal worker names', () => {
+  assert.equal(getWorkerNameError('worker1'), null);
+  assert.equal(getWorkerNameError(''), null);
 });
