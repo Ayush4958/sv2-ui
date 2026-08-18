@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { useUiConfig } from '@/hooks/useUiConfig';
+import { useUiConfig, hslToHex } from '@/hooks/useUiConfig';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useContainerLogs } from '@/hooks/useContainerLogs';
@@ -231,41 +231,4 @@ function hexToHslTriplet(hex: string): string {
   const lRound = Math.round(l * 100);
 
   return `${hRound} ${sRound}% ${lRound}%`;
-}
-
-function hslToHex(hslTriplet: string): string {
-  const [hStr, sStr, lStr] = hslTriplet.split(' ');
-  const h = parseFloat(hStr);
-  const s = parseFloat(sStr.replace('%', '')) / 100;
-  const l = parseFloat(lStr.replace('%', '')) / 100;
-
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-
-  let rPrime = 0;
-  let gPrime = 0;
-  let bPrime = 0;
-
-  if (h >= 0 && h < 60) {
-    rPrime = c; gPrime = x; bPrime = 0;
-  } else if (h >= 60 && h < 120) {
-    rPrime = x; gPrime = c; bPrime = 0;
-  } else if (h >= 120 && h < 180) {
-    rPrime = 0; gPrime = c; bPrime = x;
-  } else if (h >= 180 && h < 240) {
-    rPrime = 0; gPrime = x; bPrime = c;
-  } else if (h >= 240 && h < 300) {
-    rPrime = x; gPrime = 0; bPrime = c;
-  } else {
-    rPrime = c; gPrime = 0; bPrime = x;
-  }
-
-  const r = Math.round((rPrime + m) * 255);
-  const g = Math.round((gPrime + m) * 255);
-  const b = Math.round((bPrime + m) * 255);
-
-  const toHex = (v: number) => v.toString(16).padStart(2, '0');
-
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
