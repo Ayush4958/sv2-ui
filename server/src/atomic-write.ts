@@ -13,9 +13,20 @@ export async function writeFileAtomically(filePath: string, contents: string): P
     `.${path.basename(filePath)}.${randomUUID()}.tmp`,
   );
 
+  let mode: number | undefined;
+  try {
+    mode = (await fs.stat(filePath)).mode & 0o777;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
   let handle: fs.FileHandle | null = null;
   try {
-    handle = await fs.open(temporaryPath, 'w');
+    handle = await fs.open(temporaryPath, 'w', mode ?? 0o644);
+    // The mode passed to fs.open is still filtered by the process umask, so an
+    // existing 0644 file would become 0600 under umask 077. Re-apply the exact
+    // mode we read from the original file so the rename preserves it.
+    if (mode !== undefined) await handle.chmod(mode);
     await handle.writeFile(contents, 'utf8');
     await handle.sync();
     await handle.close();
