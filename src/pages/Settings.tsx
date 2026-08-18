@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { useUiConfig, hslToHex } from '@/hooks/useUiConfig';
+import { useUiConfig, hslToHex, isImageDataUrl, validateLogoFile } from '@/hooks/useUiConfig';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useContainerLogs } from '@/hooks/useContainerLogs';
@@ -27,6 +27,7 @@ export function Settings() {
   const [activeTab, setActiveTab] = useState('configuration');
   const { data: rawLogs, isLoading: logsLoading } = useContainerLogs(activeTab === 'logs');
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
 
   const [showSaved, setShowSaved] = useState(false);
   const isFirstRender = useRef(true);
@@ -37,19 +38,31 @@ export function Settings() {
     return () => clearTimeout(t);
   }, [config]);
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
+    setLogoError(null);
     if (!file) return;
+
+    const validation = await validateLogoFile(file);
+    if (!validation.ok) {
+      setLogoError(validation.error);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      updateConfig({ customLogoDataUrl: dataUrl });
+      if (isImageDataUrl(dataUrl)) {
+        updateConfig({ customLogoDataUrl: dataUrl });
+      } else {
+        setLogoError('The selected file could not be stored as an image.');
+      }
     };
     reader.onerror = () => {
-      console.error('Failed to read logo file');
+      setLogoError('Failed to read the selected file.');
     };
     reader.readAsDataURL(file);
-    e.target.value = '';
   };
 
   const primaryHex = hslToHex(config.primaryColor);
@@ -137,10 +150,15 @@ export function Settings() {
                         Upload logo
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      SVG, PNG, or JPG. Displayed in the sidebar header.
-                    </p>
-                  </div>
+                      <p className="text-xs text-muted-foreground">
+                        SVG, PNG, or JPG. Displayed in the sidebar header.
+                      </p>
+                      {logoError && (
+                        <p className="text-xs text-destructive" role="alert">
+                          {logoError}
+                        </p>
+                      )}
+                    </div>
 
                   <div className="space-y-3">
                     <Label htmlFor="primary-color">Primary color</Label>
@@ -165,7 +183,7 @@ export function Settings() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={resetConfig}
+                      onClick={() => { setLogoError(null); resetConfig(); }}
                     >
                       <RotateCcw className="mr-2 h-4 w-4" />
                       Reset to defaults

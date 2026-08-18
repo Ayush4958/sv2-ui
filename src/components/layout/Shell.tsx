@@ -97,7 +97,7 @@ export function Shell({
 
   const Logo = () => (
     <Link href="/" className="shrink-0 flex items-center">
-      {config.customLogoDataUrl ? (
+      {config.customLogoDataUrl.startsWith('data:image/') ? (
         <img
           src={config.customLogoDataUrl}
           alt="Logo"

@@ -35,6 +35,38 @@ export function parseHslTriplet(input: unknown): HslTriplet | null {
   return { h, s, l };
 }
 
+// Validates that a stored value is an image data URL we can persist and render.
+export function isImageDataUrl(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^data:image\/[a-zA-Z0-9+.-]+;base64,/.test(value)
+  );
+}
+
+export type LogoValidationResult = { ok: true } | { ok: false; error: string };
+
+// Validates an uploaded logo file at selection time. Rejects empty or
+// non-image files, and (where supported) tries to actually decode the image so
+// renamed or corrupt files are caught before they are stored as a broken logo.
+export async function validateLogoFile(
+  file: File | null | undefined,
+): Promise<LogoValidationResult> {
+  if (!file) return { ok: false, error: 'No file selected.' };
+  if (!(file.size > 0)) return { ok: false, error: 'The selected file is empty.' };
+  if (typeof file.type !== 'string' || !file.type.startsWith('image/')) {
+    return { ok: false, error: 'Please choose an image file (PNG, JPG, SVG, or GIF).' };
+  }
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      bitmap.close?.();
+    } catch {
+      return { ok: false, error: 'The selected file is not a valid image.' };
+    }
+  }
+  return { ok: true };
+}
+
 const DEFAULT_CONFIG: UiConfig = {
   // Cyan — matches --primary in index.css light mode
   primaryColor: '190 100% 45%',
@@ -58,7 +90,7 @@ function loadConfig(): UiConfig {
 
     return {
       primaryColor,
-      customLogoDataUrl: typeof parsed.customLogoDataUrl === 'string'
+      customLogoDataUrl: isImageDataUrl(parsed.customLogoDataUrl)
         ? parsed.customLogoDataUrl
         : DEFAULT_CONFIG.customLogoDataUrl,
     };
