@@ -21,7 +21,7 @@ import { ConfigurationTab } from '@/components/settings/ConfigurationTab';
  */
 export function Settings() {
   const { config, updateConfig, resetConfig } = useUiConfig();
-  const { status: connectionStatus, statusLabel: connectionLabel, poolName, uptime } = useConnectionStatus();
+  const { status: connectionStatus, statusLabel: connectionLabel, poolName, activePoolAddress, activePoolPort, activePoolAuthorityPublicKey, uptime } = useConnectionStatus();
   const { mode } = useSetupStatus();
   const isJdMode = mode === 'jd';
   const [activeTab, setActiveTab] = useState('configuration');
@@ -72,6 +72,9 @@ export function Settings() {
       connectionStatus={connectionStatus}
       connectionLabel={connectionLabel ?? undefined}
       poolName={poolName ?? undefined}
+      activePoolAddress={activePoolAddress ?? undefined}
+      activePoolPort={activePoolPort ?? undefined}
+      activePoolAuthorityPublicKey={activePoolAuthorityPublicKey ?? undefined}
       uptime={uptime}
     >
       <div className="space-y-8">

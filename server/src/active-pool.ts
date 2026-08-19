@@ -111,7 +111,13 @@ export function detectActivePool(
 function getConfigKey(container: LogContainerRole, pools: PoolConfig[]): string {
   return JSON.stringify([
     container,
-    ...pools.map((pool) => [pool.name, normalizeHost(pool.address), pool.port]),
+    ...pools.map((pool) => [
+      pool.name,
+      normalizeHost(pool.address),
+      pool.port,
+      pool.jds_port,
+      pool.authority_public_key,
+    ]),
   ]);
 }
 

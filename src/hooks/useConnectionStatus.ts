@@ -5,6 +5,9 @@ export interface ConnectionStatus {
   status: 'connected' | 'connecting' | 'disconnected';
   statusLabel: string | null;
   poolName: string | null;
+  activePoolAddress: string | null;
+  activePoolPort: number | null;
+  activePoolAuthorityPublicKey: string | null;
   uptime: number;
 }
 
@@ -45,6 +48,9 @@ export function useConnectionStatus(): ConnectionStatus {
     mode: templateMode,
     poolName,
     activePoolIndex,
+    activePoolAddress,
+    activePoolPort,
+    activePoolAuthorityPublicKey,
   } = useSetupStatus();
   const { isJdMode, global: poolGlobal } = usePoolData(templateMode);
 
@@ -73,6 +79,9 @@ export function useConnectionStatus(): ConnectionStatus {
     status,
     statusLabel: isSovereignSolo ? 'Sovereign Solo' : null,
     poolName: isPoolConnected ? (poolName ?? null) : null,
+    activePoolAddress: isPoolConnected ? activePoolAddress : null,
+    activePoolPort: isPoolConnected ? activePoolPort : null,
+    activePoolAuthorityPublicKey: isPoolConnected ? activePoolAuthorityPublicKey : null,
     uptime:   isPoolConnected ? (poolGlobal?.uptime_secs ?? 0) : 0,
   };
 }

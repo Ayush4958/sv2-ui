@@ -222,6 +222,9 @@ app.get('/api/status', async (_req, res) => {
         ? 'Sovereign Solo Mining'
         : (activePool?.name ?? null),
       activePoolIndex: activePool?.index ?? null,
+      activePoolAddress: activePool ? pools[activePool.index]?.address ?? null : null,
+      activePoolPort: activePool ? pools[activePool.index]?.port ?? null : null,
+      activePoolAuthorityPublicKey: activePool ? pools[activePool.index]?.authority_public_key ?? null : null,
       configurationIssues,
       containers,
     };
@@ -241,6 +244,9 @@ app.get('/api/status', async (_req, res) => {
         mode: null,
         poolName: null,
         activePoolIndex: null,
+        activePoolAddress: null,
+        activePoolPort: null,
+        activePoolAuthorityPublicKey: null,
         configurationIssues: [{
           code: 'saved-setup-unavailable',
           title: 'Your saved setup needs attention',

@@ -148,18 +148,13 @@ export function createEmptyCustomPool(userIdentity = ''): PoolConfig {
   };
 }
 
-export function isSamePool(a: Pick<PoolConfig, 'address' | 'port'> | null | undefined, b: Pick<PoolConfig, 'address' | 'port'> | null | undefined): boolean {
+export function isSamePool(a: Pick<PoolConfig, 'address' | 'port' | 'authority_public_key'> | null | undefined, b: Pick<PoolConfig, 'address' | 'port' | 'authority_public_key'> | null | undefined): boolean {
   if (!a || !b) return false;
-  return a.address.trim().toLowerCase() === b.address.trim().toLowerCase() && a.port === b.port;
+  return a.address.trim().toLowerCase() === b.address.trim().toLowerCase() && a.port === b.port && a.authority_public_key === b.authority_public_key;
 }
 
-export function getKnownPoolForConfig(pool: Pick<PoolConfig, 'address' | 'port'> | null | undefined): KnownPool | null {
+export function getKnownPoolForConfig(pool: Pick<PoolConfig, 'address' | 'port' | 'authority_public_key'> | null | undefined): KnownPool | null {
   return ALL_KNOWN_POOLS.find((knownPool) => isSamePool(pool, knownPool)) ?? null;
 }
 
-export function getKnownPoolByName(name: string | null | undefined): KnownPool | null {
-  const normalizedName = name?.trim().toLowerCase();
-  if (!normalizedName) return null;
 
-  return ALL_KNOWN_POOLS.find((pool) => pool.name.trim().toLowerCase() === normalizedName) ?? null;
-}

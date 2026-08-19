@@ -168,3 +168,46 @@ test('tracker carries a pending connection across incremental polls', async () =
     index: 1,
   });
 });
+
+test('invalidates the active pool when the authority key rotates without a new handshake', async () => {
+  let readCount = 0;
+  const tracker = new ActivePoolTracker(async (_container, options) => {
+    readCount += 1;
+    if (readCount === 1) {
+      // Initial full read under the original key: a successful handshake.
+      return [
+        log('Trying upstream 2 of 2: fallback.example.com:4444'),
+        log('Connected to upstream at 192.0.2.42:4444'),
+        log('Received: SetupConnectionSuccess(used_version: 2, flags: 0x00000000)'),
+      ];
+    }
+    // Second interaction.
+    if (options === undefined) {
+      // Fix path: the key change forces a full re-read, which now also shows
+      // the new (not-yet-successful) attempt after the rotation.
+      return [
+        log('Trying upstream 2 of 2: fallback.example.com:4444'),
+        log('Connected to upstream at 192.0.2.42:4444'),
+        log('Received: SetupConnectionSuccess(used_version: 2, flags: 0x00000000)'),
+        log('Trying upstream 2 of 2: fallback.example.com:4444'),
+      ];
+    }
+    // Buggy path: unchanged configKey means an incremental read; no new logs
+    // have appeared yet, so the stale active index would otherwise survive.
+    return [];
+  });
+
+  const poolsWithKey = (key: string): PoolConfig[] => [
+    { ...POOLS[0], authority_public_key: key },
+    { ...POOLS[1] },
+  ];
+
+  // First: connected under the original key.
+  assert.deepEqual(await tracker.getActivePool('translator', poolsWithKey('primary-key')), {
+    name: 'Fallback',
+    index: 1,
+  });
+
+  // Then the authority key rotates (same endpoint) without a new handshake.
+  assert.equal(await tracker.getActivePool('translator', poolsWithKey('rotated-key')), null);
+});

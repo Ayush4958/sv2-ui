@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { Sun, Moon, Menu, X, LayoutDashboard, Settings, HelpCircle } from 'lucide-react';
 import { cn, formatUptime } from '@/lib/utils';
-import { getKnownPoolByName } from '@/lib/pools';
+import { getKnownPoolForConfig } from '@/lib/pools';
 import type { AppMode, AppFeatures } from '@/types/api';
 import { getAppFeatures } from '@/types/api';
 import { useUiConfig } from '@/hooks/useUiConfig';
@@ -51,6 +51,9 @@ interface ShellProps {
   connectionStatus?: 'connected' | 'connecting' | 'disconnected';
   connectionLabel?: string;
   poolName?: string;
+  activePoolAddress?: string;
+  activePoolPort?: number;
+  activePoolAuthorityPublicKey?: string;
   uptime?: number;
 }
 
@@ -60,6 +63,9 @@ export function Shell({
   connectionStatus,
   connectionLabel,
   poolName,
+  activePoolAddress,
+  activePoolPort,
+  activePoolAuthorityPublicKey,
   uptime,
 }: ShellProps) {
   const [location] = useLocation();
@@ -70,7 +76,7 @@ export function Shell({
 
   const features = getAppFeatures(appMode);
   const navItems = getNavItems(features, appMode);
-  const connectedPool = getKnownPoolByName(poolName);
+  const connectedPool = getKnownPoolForConfig(activePoolAddress && activePoolPort && activePoolAuthorityPublicKey ? { address: activePoolAddress, port: activePoolPort, authority_public_key: activePoolAuthorityPublicKey } : undefined);
   const connectedStatusLabel = connectionLabel || `Connected to ${poolName || 'Pool'}`;
 
   // Close on route change

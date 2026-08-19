@@ -91,7 +91,7 @@ export function UnifiedDashboard() {
   } = useSetupStatus();
 
   // Header connection status (shared with Settings via hook)
-  const { status: connectionStatus, statusLabel: connectionLabel, poolName, uptime } = useConnectionStatus();
+  const { status: connectionStatus, statusLabel: connectionLabel, poolName, activePoolAddress, activePoolPort, activePoolAuthorityPublicKey, uptime } = useConnectionStatus();
   const isSovereignSolo = miningMode === 'solo' && templateMode === 'jd';
 
   // Data from JDC or Translator depending on configured mode
@@ -527,6 +527,9 @@ export function UnifiedDashboard() {
       connectionStatus={connectionStatus}
       connectionLabel={connectionLabel ?? undefined}
       poolName={poolName ?? undefined}
+      activePoolAddress={activePoolAddress ?? undefined}
+      activePoolPort={activePoolPort ?? undefined}
+      activePoolAuthorityPublicKey={activePoolAuthorityPublicKey ?? undefined}
       uptime={uptime}
     >
 
