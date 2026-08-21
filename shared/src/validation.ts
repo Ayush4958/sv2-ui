@@ -76,14 +76,18 @@ export function stripWrappingQuotes(v: string): string {
 
 // The SRI Noise-protocol authority key is base58check-encoded, so a corrupted
 // character or missing byte fails the checksum — which is exactly what
-// copy-paste mistakes produce. Wrapping quotes (the dominant mistake from
-// docs/Discord) are stripped here so the caller does not have to remember to
-// normalize before calling.
+// copy-paste mistakes produce.
+//
+// The value must already be canonical: no wrapping quotes (single or double)
+// and no surrounding whitespace. Stripping here would let a quoted key sail
+// through validation and land in the generated TOML as `authority_pubkey =
+// "'...'"`, which Translator/JDC then receive as an invalid key. Callers are
+// expected to normalize (e.g. via stripWrappingQuotes) before persisting.
 export function isValidPoolAuthorityPubkey(v: string): boolean {
-  const normalized = stripWrappingQuotes(v);
-  if (!normalized) return false;
+  if (typeof v !== 'string' || !v) return false;
+  if (stripWrappingQuotes(v) !== v) return false;
   try {
-    const decoded = bs58check.decode(normalized);
+    const decoded = bs58check.decode(v);
     return decoded.length === 34;
   } catch {
     return false;

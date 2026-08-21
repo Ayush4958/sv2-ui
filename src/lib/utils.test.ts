@@ -55,12 +55,16 @@ test('isValidPoolAuthorityPubkey: accepts known production pubkeys', () => {
   }
 });
 
-test('isValidPoolAuthorityPubkey: accepts a pubkey wrapped in quotes (validator normalizes internally so callers do not need to strip)', () => {
-  assert.equal(isValidPoolAuthorityPubkey(`"${VALID_PUBKEYS[1]}"`), true);
+test('isValidPoolAuthorityPubkey: rejects a pubkey wrapped in double quotes (must be canonical)', () => {
+  assert.equal(isValidPoolAuthorityPubkey(`"${VALID_PUBKEYS[1]}"`), false);
 });
 
-test('isValidPoolAuthorityPubkey: accepts a pubkey with surrounding whitespace (validator trims internally)', () => {
-  assert.equal(isValidPoolAuthorityPubkey(`  ${VALID_PUBKEYS[0]}  `), true);
+test('isValidPoolAuthorityPubkey: rejects a pubkey wrapped in single quotes (must be canonical)', () => {
+  assert.equal(isValidPoolAuthorityPubkey(`'${VALID_PUBKEYS[1]}'`), false);
+});
+
+test('isValidPoolAuthorityPubkey: rejects a pubkey with surrounding whitespace (must be canonical)', () => {
+  assert.equal(isValidPoolAuthorityPubkey(`  ${VALID_PUBKEYS[0]}  `), false);
 });
 
 test('isValidPoolAuthorityPubkey: rejects empty string', () => {
@@ -99,8 +103,8 @@ test('getPoolAuthorityPubkeyError: returns null for valid pubkeys', () => {
   }
 });
 
-test('getPoolAuthorityPubkeyError: returns null for a valid pubkey wrapped in quotes (validator normalizes internally)', () => {
-  assert.equal(getPoolAuthorityPubkeyError(`"${VALID_PUBKEYS[2]}"`), null);
+test('getPoolAuthorityPubkeyError: returns an error for a valid pubkey wrapped in quotes (must be canonical)', () => {
+  assert.match(getPoolAuthorityPubkeyError(`"${VALID_PUBKEYS[2]}"`) ?? '', /invalid/i);
 });
 
 test('getPoolAuthorityPubkeyError: returns a message for an invalid pubkey', () => {

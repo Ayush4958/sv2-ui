@@ -132,6 +132,22 @@ test('asks for setup review when JD signature would break generated TOML', () =>
   assert.equal(prepareServiceConfig(unsafeSignature).kind, 'needs-setup-review');
 });
 
+test('rejects an authority public key wrapped in quotes (must be canonical)', () => {
+  const quotedKey = {
+    ...JD_DATA,
+    pool: {
+      ...JD_DATA.pool!,
+      authority_public_key: `'${JD_DATA.pool!.authority_public_key}'`,
+    },
+  };
+
+  assert.match(
+    getSetupValidationError(quotedKey) ?? '',
+    /public key is invalid/i,
+  );
+  assert.equal(prepareServiceConfig(quotedKey).kind, 'needs-setup-review');
+});
+
 test('rejects miner telemetry CIDRs containing embedded newlines', () => {
   const unsafeCidr = {
     ...JD_DATA,
