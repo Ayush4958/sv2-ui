@@ -6,14 +6,14 @@ import { PoolIdentityFields } from '@/components/pools/PoolIdentityFields';
 import { PoolPriorityEditor } from '@/components/pools/PoolPriorityEditor';
 import {
   getPoolsForMode,
-  isSamePool,
+  isSameTrustedPool,
   type KnownPool,
 } from '@/lib/pools';
 import { normalizePoolPriorityIdentities } from '@/lib/miningIdentity';
 import { isPoolComplete, isPoolConnectionComplete } from '@/lib/poolValidation';
 
 function poolMatchesPreset(pool: PoolConfig | null | undefined, preset: KnownPool): boolean {
-  return isSamePool(pool, preset);
+  return isSameTrustedPool(pool, preset);
 }
 
 function getSelectedPreset(pool: PoolConfig | null | undefined, pools: KnownPool[]): KnownPool | null {
