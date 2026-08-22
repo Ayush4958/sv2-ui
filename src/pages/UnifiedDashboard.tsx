@@ -28,7 +28,7 @@ import {
   usePersistentBlocksFound,
   usePersistentShareStats,
 } from '@/hooks/usePersistentDashboardMetrics';
-import { isAggregatedTproxyPoolName } from '@/components/setup/poolRules';
+import { shouldAggregateTranslatorChannels } from '@/components/setup/poolRules';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useLogDiagnostics } from '@/hooks/useLogDiagnostics';
@@ -106,7 +106,13 @@ export function UnifiedDashboard() {
   } = usePoolData(templateMode);
   const { data: translatorServerChannels } = useTranslatorServerChannels(isJdMode);
   const sv1ServerChannels = isJdMode ? translatorServerChannels : serverChannels;
-  const isAggregatedTproxy = !isJdMode && isAggregatedTproxyPoolName(configPoolName);
+  const isAggregatedTproxy = !isJdMode && shouldAggregateTranslatorChannels({
+    name: '',
+    address: activePoolAddress ?? '',
+    port: activePoolPort ?? 0,
+    authority_public_key: activePoolAuthorityPublicKey ?? '',
+    user_identity: '',
+  });
 
   // SV1 clients (always from Translator)
   const {

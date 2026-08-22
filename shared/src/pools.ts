@@ -2,16 +2,17 @@ import type { PoolConfig } from './types.js';
 
 export const BRAIINS_POOL_AUTHORITY_KEY = '9awtMD5KQgvRUh2yFbjVeT7b6hjipWcAsQHd6wEhgtDT9soosna';
 export const BRAIINS_POOL_ADDRESS = 'stratum.braiins.com';
-export const BRAIINS_POOL_NAME = 'Braiins Pool';
 
-export function isAggregatedTproxyPoolName(poolName: string | null | undefined): boolean {
-  return poolName?.trim().toLowerCase() === BRAIINS_POOL_NAME.toLowerCase();
-}
-
+// Aggregation is derived from the authenticated pool identity, not a
+// user-controlled name. A pool only aggregates translator channels when it
+// strictly matches Braiins on BOTH address and authority public key, so a
+// spoofed single field (address OR key) can no longer trigger the behavior.
 export function shouldAggregateTranslatorChannels(pool: PoolConfig | null): boolean {
   if (!pool) return false;
-  return pool.authority_public_key === BRAIINS_POOL_AUTHORITY_KEY
-    || pool.address.toLowerCase() === BRAIINS_POOL_ADDRESS;
+  return (
+    pool.address.trim().toLowerCase() === BRAIINS_POOL_ADDRESS &&
+    pool.authority_public_key === BRAIINS_POOL_AUTHORITY_KEY
+  );
 }
 
 export function shouldAggregateTranslatorChannelsForPools(
