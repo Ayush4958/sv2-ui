@@ -16,6 +16,7 @@ interface FallbackIdentitySectionProps {
   hasBlockingError: boolean;
   onToggle: () => void;
   onChange: (index: number, pool: PoolConfig) => void;
+  onFieldBlockingError?: (index: number, error: string | null) => void;
 }
 
 function getSelectedPreset(pool: PoolConfig, presets: KnownPool[]): KnownPool | null {
@@ -34,6 +35,7 @@ export function FallbackIdentitySection({
   hasBlockingError,
   onToggle,
   onChange,
+  onFieldBlockingError,
 }: FallbackIdentitySectionProps) {
   const customizedCount = fallbackPools.filter((pool) => (
     pool.user_identity !== getCompatiblePoolIdentity(primaryPool, pool, miningMode)
@@ -117,6 +119,9 @@ export function FallbackIdentitySection({
                 network={network}
                 idPrefix={`${idPrefix}-${index}`}
                 onChange={(nextPool) => onChange(index, nextPool)}
+                onBlockingErrorChange={onFieldBlockingError
+                  ? (error) => onFieldBlockingError(index, error)
+                  : undefined}
               />
             </div>
           );

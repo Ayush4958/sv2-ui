@@ -36,12 +36,14 @@ export function PoolIdentityFields({
   network,
   idPrefix,
   onChange,
+  onBlockingErrorChange,
 }: {
   pool: PoolConfig;
   miningMode: MiningMode | null;
   network: BitcoinNetwork;
   idPrefix: string;
   onChange: (pool: PoolConfig) => void;
+  onBlockingErrorChange?: (error: string | null) => void;
 }) {
   if (miningMode === 'solo' && isSriPool(pool)) {
     return (
@@ -50,6 +52,7 @@ export function PoolIdentityFields({
         network={network}
         idPrefix={idPrefix}
         onChange={onChange}
+        onBlockingErrorChange={onBlockingErrorChange}
       />
     );
   }
@@ -98,11 +101,13 @@ function SriPoolIdentityFields({
   network,
   idPrefix,
   onChange,
+  onBlockingErrorChange,
 }: {
   pool: PoolConfig;
   network: BitcoinNetwork;
   idPrefix: string;
   onChange: (pool: PoolConfig) => void;
+  onBlockingErrorChange?: (error: string | null) => void;
 }) {
   const parsed = parseSriIdentity(pool.user_identity);
   const [savedPayoutAddress, setSavedPayoutAddress] = useState(parsed.address);
@@ -111,7 +116,12 @@ function SriPoolIdentityFields({
   const needsAddress = parsed.donationPercent < 100;
   const identityError = getPoolIdentityError(pool, 'solo', network, workerName);
   const workerNameError = getWorkerNameError(workerName);
+  // The raw worker name can be sanitized away before it reaches the stored
+  // identity (field-injection defense), so gate callers must be told when the
+  // value being displayed carries an error. Any displayed error blocks.
+  const blockingError = identityError ?? workerNameError;
   const onChangeRef = useRef(onChange);
+  const onBlockingErrorChangeRef = useRef(onBlockingErrorChange);
   // Tracks the identity we last pushed so an external change (e.g. switching
   // pools, loading a config) resyncs the worker field, while our own edits do
   // not clobber what the user is typing.
@@ -119,7 +129,15 @@ function SriPoolIdentityFields({
 
   useEffect(() => {
     onChangeRef.current = onChange;
-  }, [onChange]);
+    onBlockingErrorChangeRef.current = onBlockingErrorChange;
+  }, [onChange, onBlockingErrorChange]);
+
+  useEffect(() => {
+    onBlockingErrorChangeRef.current?.(blockingError);
+    // Clearing on unmount keeps a stale error from blocking after the field
+    // disappears (pool switch, mining-mode change).
+    return () => onBlockingErrorChangeRef.current?.(null);
+  }, [blockingError]);
 
   useEffect(() => {
     const normalizedPool = normalizePoolUserIdentity(pool, 'solo');

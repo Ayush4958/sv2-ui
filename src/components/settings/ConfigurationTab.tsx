@@ -33,7 +33,7 @@ import {
   isTomlSafeIdentifier,
 } from '@/lib/utils';
 import { clearDashboardClientState } from '@/lib/dashboardState';
-import { isPoolComplete } from '@/lib/poolValidation';
+import { isPoolFormValid } from '@/lib/poolValidation';
 import { isBitcoinSocketError } from '@/lib/bitcoinSocketErrors';
 import type { PoolConfig, SetupData } from '@/components/setup/types';
 import {
@@ -98,6 +98,8 @@ export function ConfigurationTab() {
   const [hashrateInputValid, setHashrateInputValid] = useState(true);
   const [editMinerTelemetryCidr, setEditMinerTelemetryCidr] = useState('');
   const [editAdvanced, setEditAdvanced] = useState<AdvancedMiningConfigValues | null>(null);
+  const [editPrimaryIdentityError, setEditPrimaryIdentityError] = useState<string | null>(null);
+  const [editFallbackIdentityErrors, setEditFallbackIdentityErrors] = useState<Record<number, string | null>>({});
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -162,6 +164,8 @@ export function ConfigurationTab() {
       config.miningMode,
     ));
     setShowFallbackIdentityFields(false);
+    setEditPrimaryIdentityError(null);
+    setEditFallbackIdentityErrors({});
     setEditing('pools');
   };
 
@@ -203,14 +207,19 @@ export function ConfigurationTab() {
     setHashrateInputValid(true);
     setEditMinerTelemetryCidr('');
     setEditAdvanced(null);
+    setEditPrimaryIdentityError(null);
+    setEditFallbackIdentityErrors({});
   };
 
   const editNetwork = config?.bitcoin?.network ?? 'mainnet';
-  const arePoolsValid =
-    (editPools?.length ?? 0) > 0 &&
-    (editPools ?? []).every((pool) => (
-      isPoolComplete(pool, config?.miningMode ?? null, editNetwork)
-    ));
+  // Identity fields report blocking errors (e.g. a raw worker name that gets
+  // sanitized out of the stored identity); they must gate Save too.
+  const arePoolsValid = isPoolFormValid({
+    pools: editPools ?? [],
+    miningMode: config?.miningMode ?? null,
+    network: editNetwork,
+    reportedErrors: { 0: editPrimaryIdentityError, ...editFallbackIdentityErrors },
+  });
   const isSignatureValid = editSignature === '' || isTomlSafeIdentifier(editSignature);
   const isHashrateValid =
     hashrateInputValid &&
@@ -626,6 +635,7 @@ export function ConfigurationTab() {
                           network={editNetwork}
                           idPrefix="edit-primary-pool"
                           onChange={(nextPool) => updateEditPoolIdentity(0, nextPool)}
+                          onBlockingErrorChange={setEditPrimaryIdentityError}
                         />
                       </div>
 
@@ -642,6 +652,9 @@ export function ConfigurationTab() {
                           hasBlockingError={fallbackIdentityBlocked}
                           onToggle={() => setShowFallbackIdentityFields((current) => !current)}
                           onChange={(index, nextPool) => updateEditPoolIdentity(index + 1, nextPool)}
+                          onFieldBlockingError={(index, error) => {
+                            setEditFallbackIdentityErrors((current) => ({ ...current, [index + 1]: error }));
+                          }}
                         />
                       )}
                     </div>
