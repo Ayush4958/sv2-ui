@@ -126,6 +126,10 @@ export function jdcBitcoinCoreInitialBlockDownloadParser(
       JDC_BITCOIN_CORE_IBD_HINT_REGEX.test(message)
   );
 
+  if (ibdMatches.length === 0) {
+    return null;
+  }
+
   const matches = lines.filter(
     ({ container, message }, index) =>
       index > latestRecoveryIndex &&

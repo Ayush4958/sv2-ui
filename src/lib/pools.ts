@@ -148,18 +148,48 @@ export function createEmptyCustomPool(userIdentity = ''): PoolConfig {
   };
 }
 
-export function isSamePool(a: Pick<PoolConfig, 'address' | 'port'> | null | undefined, b: Pick<PoolConfig, 'address' | 'port'> | null | undefined): boolean {
+// Trusted pool identity for official branding. Requires address, port, AND
+// authority public key to match. A correct endpoint with a forged or wrong key
+// must never match, so this must not be used for deduplication where a
+// wrong-key entry should still occupy its endpoint.
+export function isSameTrustedPool(
+  a: Pick<PoolConfig, 'address' | 'port' | 'authority_public_key'> | null | undefined,
+  b: Pick<PoolConfig, 'address' | 'port' | 'authority_public_key'> | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  return (
+    a.address.trim().toLowerCase() === b.address.trim().toLowerCase() &&
+    a.port === b.port &&
+    a.authority_public_key === b.authority_public_key
+  );
+}
+
+// Endpoint-only equality (address + port). Used for duplicate detection so a
+// known endpoint cannot be configured twice even when the authority key is
+// wrong or missing. Deliberately ignores the authority key.
+export function hasSameEndpoint(
+  a: Pick<PoolConfig, 'address' | 'port'> | null | undefined,
+  b: Pick<PoolConfig, 'address' | 'port'> | null | undefined,
+): boolean {
   if (!a || !b) return false;
   return a.address.trim().toLowerCase() === b.address.trim().toLowerCase() && a.port === b.port;
 }
 
-export function getKnownPoolForConfig(pool: Pick<PoolConfig, 'address' | 'port'> | null | undefined): KnownPool | null {
-  return ALL_KNOWN_POOLS.find((knownPool) => isSamePool(pool, knownPool)) ?? null;
+// Decides whether two pool entries are duplicates for editor deduplication.
+// Currently any shared endpoint (address+port) collapses as a duplicate
+// regardless of authority key, so a misconfigured (wrong-key) entry still
+// occupies that endpoint and cannot be re-added. If the product later wants to
+// intentionally support multiple authorities on one endpoint, this is the
+// single place to change.
+export function isDuplicatePoolEndpoint(
+  a: Pick<PoolConfig, 'address' | 'port'> | null | undefined,
+  b: Pick<PoolConfig, 'address' | 'port'> | null | undefined,
+): boolean {
+  return hasSameEndpoint(a, b);
 }
 
-export function getKnownPoolByName(name: string | null | undefined): KnownPool | null {
-  const normalizedName = name?.trim().toLowerCase();
-  if (!normalizedName) return null;
-
-  return ALL_KNOWN_POOLS.find((pool) => pool.name.trim().toLowerCase() === normalizedName) ?? null;
+export function getKnownPoolForConfig(pool: Pick<PoolConfig, 'address' | 'port' | 'authority_public_key'> | null | undefined): KnownPool | null {
+  return ALL_KNOWN_POOLS.find((knownPool) => isSameTrustedPool(pool, knownPool)) ?? null;
 }
+
+

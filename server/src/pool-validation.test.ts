@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import bs58check from 'bs58check';
 import type { PoolConfig } from './types.js';
 import { getPoolConfigError } from './pool-validation.js';
 
@@ -43,6 +44,40 @@ test('rejects invalid and corrupted authority public keys', () => {
       ...VALID_POOL,
       authority_public_key: `${VALID_POOL.authority_public_key.slice(0, -1)}b`,
     }, 'Primary pool') ?? '',
+    /public key is invalid/i,
+  );
+});
+
+test('rejects authority public keys wrapped in quotes (must be canonical)', () => {
+  const canonical = VALID_POOL.authority_public_key;
+  for (const quoted of [`'${canonical}'`, `"${canonical}"`]) {
+    assert.match(
+      getPoolConfigError({ ...VALID_POOL, authority_public_key: quoted }, 'Primary pool') ?? '',
+      /public key is invalid/i,
+      `expected ${quoted} to be rejected`,
+    );
+  }
+});
+
+test('rejects authority public keys with surrounding whitespace', () => {
+  assert.match(
+    getPoolConfigError({
+      ...VALID_POOL,
+      authority_public_key: `  ${VALID_POOL.authority_public_key}  `,
+    }, 'Primary pool') ?? '',
+    /public key is invalid/i,
+  );
+});
+
+test('rejects a checksum-valid base58check blob of wrong decoded length', () => {
+  const tooShort = bs58check.encode(Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]));
+  assert.match(
+    getPoolConfigError({ ...VALID_POOL, authority_public_key: tooShort }, 'Primary pool') ?? '',
+    /public key is invalid/i,
+  );
+  const tooLong = bs58check.encode(Buffer.alloc(120, 0x42));
+  assert.match(
+    getPoolConfigError({ ...VALID_POOL, authority_public_key: tooLong }, 'Primary pool') ?? '',
     /public key is invalid/i,
   );
 });

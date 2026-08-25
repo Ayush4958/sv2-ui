@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { useUiConfig } from '@/hooks/useUiConfig';
+import { useUiConfig, hslToHex, isImageDataUrl, validateLogoFile } from '@/hooks/useUiConfig';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useContainerLogs } from '@/hooks/useContainerLogs';
@@ -21,12 +21,13 @@ import { ConfigurationTab } from '@/components/settings/ConfigurationTab';
  */
 export function Settings() {
   const { config, updateConfig, resetConfig } = useUiConfig();
-  const { status: connectionStatus, statusLabel: connectionLabel, poolName, uptime } = useConnectionStatus();
+  const { status: connectionStatus, statusLabel: connectionLabel, poolName, activePoolAddress, activePoolPort, activePoolAuthorityPublicKey, uptime } = useConnectionStatus();
   const { mode } = useSetupStatus();
   const isJdMode = mode === 'jd';
   const [activeTab, setActiveTab] = useState('configuration');
   const { data: rawLogs, isLoading: logsLoading } = useContainerLogs(activeTab === 'logs');
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
 
   const [showSaved, setShowSaved] = useState(false);
   const isFirstRender = useRef(true);
@@ -37,19 +38,31 @@ export function Settings() {
     return () => clearTimeout(t);
   }, [config]);
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
+    setLogoError(null);
     if (!file) return;
+
+    const validation = await validateLogoFile(file);
+    if (!validation.ok) {
+      setLogoError(validation.error);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      updateConfig({ customLogoDataUrl: dataUrl });
+      if (isImageDataUrl(dataUrl)) {
+        updateConfig({ customLogoDataUrl: dataUrl });
+      } else {
+        setLogoError('The selected file could not be stored as an image.');
+      }
     };
     reader.onerror = () => {
-      console.error('Failed to read logo file');
+      setLogoError('Failed to read the selected file.');
     };
     reader.readAsDataURL(file);
-    e.target.value = '';
   };
 
   const primaryHex = hslToHex(config.primaryColor);
@@ -59,6 +72,9 @@ export function Settings() {
       connectionStatus={connectionStatus}
       connectionLabel={connectionLabel ?? undefined}
       poolName={poolName ?? undefined}
+      activePoolAddress={activePoolAddress ?? undefined}
+      activePoolPort={activePoolPort ?? undefined}
+      activePoolAuthorityPublicKey={activePoolAuthorityPublicKey ?? undefined}
       uptime={uptime}
     >
       <div className="space-y-8">
@@ -137,10 +153,15 @@ export function Settings() {
                         Upload logo
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      SVG, PNG, or JPG. Displayed in the sidebar header.
-                    </p>
-                  </div>
+                      <p className="text-xs text-muted-foreground">
+                        SVG, PNG, or JPG. Displayed in the sidebar header.
+                      </p>
+                      {logoError && (
+                        <p className="text-xs text-destructive" role="alert">
+                          {logoError}
+                        </p>
+                      )}
+                    </div>
 
                   <div className="space-y-3">
                     <Label htmlFor="primary-color">Primary color</Label>
@@ -165,7 +186,7 @@ export function Settings() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={resetConfig}
+                      onClick={() => { setLogoError(null); resetConfig(); }}
                     >
                       <RotateCcw className="mr-2 h-4 w-4" />
                       Reset to defaults
@@ -231,41 +252,4 @@ function hexToHslTriplet(hex: string): string {
   const lRound = Math.round(l * 100);
 
   return `${hRound} ${sRound}% ${lRound}%`;
-}
-
-function hslToHex(hslTriplet: string): string {
-  const [hStr, sStr, lStr] = hslTriplet.split(' ');
-  const h = parseFloat(hStr);
-  const s = parseFloat(sStr.replace('%', '')) / 100;
-  const l = parseFloat(lStr.replace('%', '')) / 100;
-
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-
-  let rPrime = 0;
-  let gPrime = 0;
-  let bPrime = 0;
-
-  if (h >= 0 && h < 60) {
-    rPrime = c; gPrime = x; bPrime = 0;
-  } else if (h >= 60 && h < 120) {
-    rPrime = x; gPrime = c; bPrime = 0;
-  } else if (h >= 120 && h < 180) {
-    rPrime = 0; gPrime = c; bPrime = x;
-  } else if (h >= 180 && h < 240) {
-    rPrime = 0; gPrime = x; bPrime = c;
-  } else if (h >= 240 && h < 300) {
-    rPrime = x; gPrime = 0; bPrime = c;
-  } else {
-    rPrime = c; gPrime = 0; bPrime = x;
-  }
-
-  const r = Math.round((rPrime + m) * 255);
-  const g = Math.round((gPrime + m) * 255);
-  const b = Math.round((bPrime + m) * 255);
-
-  const toHex = (v: number) => v.toString(16).padStart(2, '0');
-
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }

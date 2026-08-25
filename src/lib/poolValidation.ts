@@ -25,3 +25,31 @@ export function isPoolComplete(
     !getPoolIdentityError(pool, miningMode, network),
   );
 }
+
+export interface PoolFormValidityInput {
+  /** Ordered pool list; index 0 is the primary pool. */
+  pools: Array<PoolConfig | null | undefined>;
+  miningMode: MiningMode | null;
+  network: BitcoinNetwork;
+  /**
+   * Blocking identity errors reported per pool index by identity field
+   * components. Some invalid inputs (e.g. an injection-shaped worker name
+   * such as `25/<address>`) are sanitized before they reach the stored
+   * identity, so `isPoolComplete` alone cannot see them; the field surfaces
+   * them here so a value displaying an error can never be submitted.
+   */
+  reportedErrors?: Record<number, string | null | undefined>;
+}
+
+export function isPoolFormValid({
+  pools,
+  miningMode,
+  network,
+  reportedErrors,
+}: PoolFormValidityInput): boolean {
+  if (pools.length === 0) return false;
+
+  return pools.every((pool, index) => (
+    isPoolComplete(pool, miningMode, network) && !reportedErrors?.[index]
+  ));
+}

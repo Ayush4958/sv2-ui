@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import bs58check from 'bs58check';
 
 import {
   stripWrappingQuotes,
@@ -54,12 +55,16 @@ test('isValidPoolAuthorityPubkey: accepts known production pubkeys', () => {
   }
 });
 
-test('isValidPoolAuthorityPubkey: accepts a pubkey wrapped in quotes (validator normalizes internally so callers do not need to strip)', () => {
-  assert.equal(isValidPoolAuthorityPubkey(`"${VALID_PUBKEYS[1]}"`), true);
+test('isValidPoolAuthorityPubkey: rejects a pubkey wrapped in double quotes (must be canonical)', () => {
+  assert.equal(isValidPoolAuthorityPubkey(`"${VALID_PUBKEYS[1]}"`), false);
 });
 
-test('isValidPoolAuthorityPubkey: accepts a pubkey with surrounding whitespace (validator trims internally)', () => {
-  assert.equal(isValidPoolAuthorityPubkey(`  ${VALID_PUBKEYS[0]}  `), true);
+test('isValidPoolAuthorityPubkey: rejects a pubkey wrapped in single quotes (must be canonical)', () => {
+  assert.equal(isValidPoolAuthorityPubkey(`'${VALID_PUBKEYS[1]}'`), false);
+});
+
+test('isValidPoolAuthorityPubkey: rejects a pubkey with surrounding whitespace (must be canonical)', () => {
+  assert.equal(isValidPoolAuthorityPubkey(`  ${VALID_PUBKEYS[0]}  `), false);
 });
 
 test('isValidPoolAuthorityPubkey: rejects empty string', () => {
@@ -98,8 +103,8 @@ test('getPoolAuthorityPubkeyError: returns null for valid pubkeys', () => {
   }
 });
 
-test('getPoolAuthorityPubkeyError: returns null for a valid pubkey wrapped in quotes (validator normalizes internally)', () => {
-  assert.equal(getPoolAuthorityPubkeyError(`"${VALID_PUBKEYS[2]}"`), null);
+test('getPoolAuthorityPubkeyError: returns an error for a valid pubkey wrapped in quotes (must be canonical)', () => {
+  assert.match(getPoolAuthorityPubkeyError(`"${VALID_PUBKEYS[2]}"`) ?? '', /invalid/i);
 });
 
 test('getPoolAuthorityPubkeyError: returns a message for an invalid pubkey', () => {
@@ -170,4 +175,11 @@ test('getIdentifierError: returns a not-allowed-characters message for a quote',
 
 test('getIdentifierError: returns a not-allowed-characters message for a backslash', () => {
   assert.match(getIdentifierError('mi\\ner') ?? '', /not allowed|invalid|characters/i);
+});
+
+test('isValidPoolAuthorityPubkey: rejects a checksum-valid base58check blob of wrong decoded length', () => {
+  const tooShort = bs58check.encode(Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]));
+  assert.equal(isValidPoolAuthorityPubkey(tooShort), false);
+  const tooLong = bs58check.encode(Buffer.alloc(120, 0x42));
+  assert.equal(isValidPoolAuthorityPubkey(tooLong), false);
 });

@@ -1,5 +1,4 @@
-import bs58check from 'bs58check';
-import { isTomlSafeIdentifier } from '@sv2-ui/shared';
+import { isTomlSafeIdentifier, isValidPoolAuthorityPubkey } from '@sv2-ui/shared';
 import type { PoolConfig } from './types.js';
 
 const MAX_POOL_NAME_LENGTH = 128;
@@ -12,17 +11,6 @@ function isSafeBoundedString(value: unknown, maxLength: number): value is string
   return typeof value === 'string' &&
     value.length <= maxLength &&
     isTomlSafeIdentifier(value);
-}
-
-function isValidAuthorityPublicKey(value: unknown): value is string {
-  if (!isSafeBoundedString(value, MAX_AUTHORITY_KEY_LENGTH)) return false;
-
-  try {
-    bs58check.decode(value);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export function getPoolConfigError(pool: PoolConfig, label: string): string | null {
@@ -40,7 +28,7 @@ export function getPoolConfigError(pool: PoolConfig, label: string): string | nu
   )) {
     return `${label} JD port must be between 1 and 65535`;
   }
-  if (!isValidAuthorityPublicKey(pool.authority_public_key)) {
+  if (!isSafeBoundedString(pool.authority_public_key, MAX_AUTHORITY_KEY_LENGTH) || !isValidPoolAuthorityPubkey(pool.authority_public_key)) {
     return `${label} authority public key is invalid`;
   }
   if (!isSafeBoundedString(pool.user_identity, MAX_IDENTITY_LENGTH)) {

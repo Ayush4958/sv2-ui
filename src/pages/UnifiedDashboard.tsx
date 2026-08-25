@@ -28,7 +28,7 @@ import {
   usePersistentBlocksFound,
   usePersistentShareStats,
 } from '@/hooks/usePersistentDashboardMetrics';
-import { isAggregatedTproxyPoolName } from '@/components/setup/poolRules';
+import { shouldAggregateTranslatorChannels } from '@/components/setup/poolRules';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useLogDiagnostics } from '@/hooks/useLogDiagnostics';
@@ -91,7 +91,7 @@ export function UnifiedDashboard() {
   } = useSetupStatus();
 
   // Header connection status (shared with Settings via hook)
-  const { status: connectionStatus, statusLabel: connectionLabel, poolName, uptime } = useConnectionStatus();
+  const { status: connectionStatus, statusLabel: connectionLabel, poolName, activePoolAddress, activePoolPort, activePoolAuthorityPublicKey, uptime } = useConnectionStatus();
   const isSovereignSolo = miningMode === 'solo' && templateMode === 'jd';
 
   // Data from JDC or Translator depending on configured mode
@@ -106,7 +106,13 @@ export function UnifiedDashboard() {
   } = usePoolData(templateMode);
   const { data: translatorServerChannels } = useTranslatorServerChannels(isJdMode);
   const sv1ServerChannels = isJdMode ? translatorServerChannels : serverChannels;
-  const isAggregatedTproxy = !isJdMode && isAggregatedTproxyPoolName(configPoolName);
+  const isAggregatedTproxy = !isJdMode && shouldAggregateTranslatorChannels({
+    name: '',
+    address: activePoolAddress ?? '',
+    port: activePoolPort ?? 0,
+    authority_public_key: activePoolAuthorityPublicKey ?? '',
+    user_identity: '',
+  });
 
   // SV1 clients (always from Translator)
   const {
@@ -527,6 +533,9 @@ export function UnifiedDashboard() {
       connectionStatus={connectionStatus}
       connectionLabel={connectionLabel ?? undefined}
       poolName={poolName ?? undefined}
+      activePoolAddress={activePoolAddress ?? undefined}
+      activePoolPort={activePoolPort ?? undefined}
+      activePoolAuthorityPublicKey={activePoolAuthorityPublicKey ?? undefined}
       uptime={uptime}
     >
 

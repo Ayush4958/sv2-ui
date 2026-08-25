@@ -132,6 +132,77 @@ test('asks for setup review when JD signature would break generated TOML', () =>
   assert.equal(prepareServiceConfig(unsafeSignature).kind, 'needs-setup-review');
 });
 
+test('rejects an authority public key wrapped in quotes (must be canonical)', () => {
+  const quotedKey = {
+    ...JD_DATA,
+    pool: {
+      ...JD_DATA.pool!,
+      authority_public_key: `'${JD_DATA.pool!.authority_public_key}'`,
+    },
+  };
+
+  assert.match(
+    getSetupValidationError(quotedKey) ?? '',
+    /public key is invalid/i,
+  );
+  assert.equal(prepareServiceConfig(quotedKey).kind, 'needs-setup-review');
+});
+
+test('rejects miner telemetry CIDRs containing embedded newlines', () => {
+  const unsafeCidr = {
+    ...JD_DATA,
+    miner_telemetry_cidr: '192.168.1.\n0/24',
+  };
+
+  assert.notEqual(getSetupValidationError(unsafeCidr), null);
+  assert.equal(prepareServiceConfig(unsafeCidr).kind, 'needs-setup-review');
+});
+
+test('rejects miner telemetry CIDRs using hex octets', () => {
+  const unsafeCidr = {
+    ...JD_DATA,
+    miner_telemetry_cidr: '192.168.0x10.0/24',
+  };
+
+  assert.notEqual(getSetupValidationError(unsafeCidr), null);
+});
+
+test('rejects miner telemetry CIDRs using scientific notation', () => {
+  const unsafeCidr = {
+    ...JD_DATA,
+    miner_telemetry_cidr: '192.168.1e2.0/24',
+  };
+
+  assert.notEqual(getSetupValidationError(unsafeCidr), null);
+});
+
+test('rejects miner telemetry CIDRs using signed octets', () => {
+  const unsafeCidr = {
+    ...JD_DATA,
+    miner_telemetry_cidr: '+192.168.1.0/24',
+  };
+
+  assert.notEqual(getSetupValidationError(unsafeCidr), null);
+});
+
+test('rejects miner telemetry CIDRs with noncanonical leading zeros', () => {
+  const unsafeCidr = {
+    ...JD_DATA,
+    miner_telemetry_cidr: '192.168.001.000/024',
+  };
+
+  assert.notEqual(getSetupValidationError(unsafeCidr), null);
+});
+
+test('rejects a valid IP with a noncanonical prefix', () => {
+  const unsafeCidr = {
+    ...JD_DATA,
+    miner_telemetry_cidr: '192.168.1.0/024',
+  };
+
+  assert.notEqual(getSetupValidationError(unsafeCidr), null);
+});
+
 test('preparation uses safe defaults before rendering', () => {
   const legacyWithSafeDefaults = {
     ...JD_DATA,

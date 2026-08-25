@@ -156,7 +156,6 @@ export function BitcoinPrereqStep({ data, updateData, onNext, discoveredNodes, i
               network: node.network,
               customDataDir: '',
               socket_path: socketPath,
-              discoveredLogPath: node.logpath,
             } as BitcoinConfig,
           });
           setIpcStatus('valid');
@@ -213,7 +212,6 @@ export function BitcoinPrereqStep({ data, updateData, onNext, discoveredNodes, i
           network: selectedNetwork,
           customDataDir: data.bitcoin?.customDataDir ?? '',
           socket_path: networkChanged ? '' : data.bitcoin?.socket_path ?? '',
-          discoveredLogPath: networkChanged ? undefined : data.bitcoin?.discoveredLogPath,
         },
       });
     }

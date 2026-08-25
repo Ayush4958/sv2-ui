@@ -1,6 +1,6 @@
 import type { BitcoinNetwork, MiningMode, PoolConfig } from '@sv2-ui/shared';
 import { PoolIcon } from '@/components/ui/pool-icon';
-import { isSamePool, type KnownPool } from '@/lib/pools';
+import { isSameTrustedPool, type KnownPool } from '@/lib/pools';
 import { getCompatiblePoolIdentity } from '@/lib/miningIdentity';
 import { PoolIdentityFields } from './PoolIdentityFields';
 
@@ -16,10 +16,11 @@ interface FallbackIdentitySectionProps {
   hasBlockingError: boolean;
   onToggle: () => void;
   onChange: (index: number, pool: PoolConfig) => void;
+  onFieldBlockingError?: (index: number, error: string | null) => void;
 }
 
 function getSelectedPreset(pool: PoolConfig, presets: KnownPool[]): KnownPool | null {
-  return presets.find((preset) => isSamePool(pool, preset)) ?? null;
+  return presets.find((preset) => isSameTrustedPool(pool, preset)) ?? null;
 }
 
 export function FallbackIdentitySection({
@@ -34,6 +35,7 @@ export function FallbackIdentitySection({
   hasBlockingError,
   onToggle,
   onChange,
+  onFieldBlockingError,
 }: FallbackIdentitySectionProps) {
   const customizedCount = fallbackPools.filter((pool) => (
     pool.user_identity !== getCompatiblePoolIdentity(primaryPool, pool, miningMode)
@@ -117,6 +119,9 @@ export function FallbackIdentitySection({
                 network={network}
                 idPrefix={`${idPrefix}-${index}`}
                 onChange={(nextPool) => onChange(index, nextPool)}
+                onBlockingErrorChange={onFieldBlockingError
+                  ? (error) => onFieldBlockingError(index, error)
+                  : undefined}
               />
             </div>
           );

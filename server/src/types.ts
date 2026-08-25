@@ -19,6 +19,9 @@ export interface StatusResponse {
   mode: SetupMode | null;
   poolName: string | null;
   activePoolIndex: number | null;
+  activePoolAddress: string | null;
+  activePoolPort: number | null;
+  activePoolAuthorityPublicKey: string | null;
   configurationIssues: ServiceConfigIssue[];
   containers: {
     translator: ContainerStatus | null;

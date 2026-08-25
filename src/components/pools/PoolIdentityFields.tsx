@@ -10,6 +10,7 @@ import {
 import {
   buildSriIdentity,
   getPoolIdentityError,
+  getWorkerNameError,
   isSriPool,
   normalizePoolUserIdentity,
   parseSriIdentity,
@@ -35,12 +36,14 @@ export function PoolIdentityFields({
   network,
   idPrefix,
   onChange,
+  onBlockingErrorChange,
 }: {
   pool: PoolConfig;
   miningMode: MiningMode | null;
   network: BitcoinNetwork;
   idPrefix: string;
   onChange: (pool: PoolConfig) => void;
+  onBlockingErrorChange?: (error: string | null) => void;
 }) {
   if (miningMode === 'solo' && isSriPool(pool)) {
     return (
@@ -49,6 +52,7 @@ export function PoolIdentityFields({
         network={network}
         idPrefix={idPrefix}
         onChange={onChange}
+        onBlockingErrorChange={onBlockingErrorChange}
       />
     );
   }
@@ -97,36 +101,61 @@ function SriPoolIdentityFields({
   network,
   idPrefix,
   onChange,
+  onBlockingErrorChange,
 }: {
   pool: PoolConfig;
   network: BitcoinNetwork;
   idPrefix: string;
   onChange: (pool: PoolConfig) => void;
+  onBlockingErrorChange?: (error: string | null) => void;
 }) {
   const parsed = parseSriIdentity(pool.user_identity);
   const [savedPayoutAddress, setSavedPayoutAddress] = useState(parsed.address);
+  const [workerName, setWorkerName] = useState(parsed.workerName);
   const payoutAddress = parsed.address || savedPayoutAddress;
   const needsAddress = parsed.donationPercent < 100;
-  const identityError = getPoolIdentityError(pool, 'solo', network);
+  const identityError = getPoolIdentityError(pool, 'solo', network, workerName);
+  const workerNameError = getWorkerNameError(workerName);
+  // The raw worker name can be sanitized away before it reaches the stored
+  // identity (field-injection defense), so gate callers must be told when the
+  // value being displayed carries an error. Any displayed error blocks.
+  const blockingError = identityError ?? workerNameError;
   const onChangeRef = useRef(onChange);
+  const onBlockingErrorChangeRef = useRef(onBlockingErrorChange);
+  // Tracks the identity we last pushed so an external change (e.g. switching
+  // pools, loading a config) resyncs the worker field, while our own edits do
+  // not clobber what the user is typing.
+  const lastPushedIdentity = useRef(pool.user_identity);
 
   useEffect(() => {
     onChangeRef.current = onChange;
-  }, [onChange]);
+    onBlockingErrorChangeRef.current = onBlockingErrorChange;
+  }, [onChange, onBlockingErrorChange]);
+
+  useEffect(() => {
+    onBlockingErrorChangeRef.current?.(blockingError);
+    // Clearing on unmount keeps a stale error from blocking after the field
+    // disappears (pool switch, mining-mode change).
+    return () => onBlockingErrorChangeRef.current?.(null);
+  }, [blockingError]);
 
   useEffect(() => {
     const normalizedPool = normalizePoolUserIdentity(pool, 'solo');
     if (normalizedPool !== pool) {
       onChangeRef.current(normalizedPool);
+      return;
+    }
+    if (pool.user_identity !== lastPushedIdentity.current) {
+      setWorkerName(parseSriIdentity(pool.user_identity).workerName);
     }
   }, [pool]);
 
-  const updateSriIdentity = (address: string, workerName: string, donationPercent: number) => {
+  const updateSriIdentity = (address: string, nextWorkerName: string, donationPercent: number) => {
     setSavedPayoutAddress(address);
-    onChange({
-      ...pool,
-      user_identity: buildSriIdentity(address, workerName, donationPercent),
-    });
+    setWorkerName(nextWorkerName);
+    const user_identity = buildSriIdentity(address, nextWorkerName, donationPercent);
+    lastPushedIdentity.current = user_identity;
+    onChangeRef.current({ ...pool, user_identity });
   };
 
   return (
@@ -141,7 +170,7 @@ function SriPoolIdentityFields({
             id={`${idPrefix}-payout-address`}
             type="text"
             value={payoutAddress}
-            onChange={(event) => updateSriIdentity(event.target.value, parsed.workerName, parsed.donationPercent)}
+            onChange={(event) => updateSriIdentity(event.target.value, workerName, parsed.donationPercent)}
             placeholder={getBitcoinAddressPlaceholder(network)}
             aria-required="true"
             autoComplete="off"
@@ -161,12 +190,13 @@ function SriPoolIdentityFields({
         <input
           id={`${idPrefix}-worker-name`}
           type="text"
-          value={parsed.workerName}
-          onChange={(event) => updateSriIdentity(payoutAddress, event.target.value, parsed.donationPercent)}
+            value={workerName}
+            onChange={(event) => updateSriIdentity(payoutAddress, event.target.value, parsed.donationPercent)}
           placeholder="worker1"
           autoComplete="off"
           className="w-full h-10 px-3 rounded-lg border border-input bg-background focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15 outline-none transition-all font-mono text-sm"
         />
+        <FieldError message={workerNameError} />
       </div>
 
       <div>
@@ -182,7 +212,7 @@ function SriPoolIdentityFields({
             value={parsed.donationPercent}
             onChange={(event) => updateSriIdentity(
               payoutAddress,
-              parsed.workerName,
+              workerName,
               snapDonation(Number(event.target.value)),
             )}
             aria-label={`Donation: ${parsed.donationPercent}%`}

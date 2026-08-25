@@ -9,6 +9,64 @@ type UiConfig = {
 
 const STORAGE_KEY = 'sv2-ui-config';
 
+export type HslTriplet = {
+  h: number;
+  s: number;
+  l: number;
+};
+
+// Validates an HSL triplet string and returns its numeric components.
+// Accepts any single-separator whitespace (space, tab, repeated spaces) and
+// enforces the valid ranges, so validation and parsing can never disagree.
+export function parseHslTriplet(input: unknown): HslTriplet | null {
+  if (typeof input !== 'string') return null;
+  const parts = input.trim().split(/\s+/);
+  if (parts.length !== 3) return null;
+
+  const h = Number(parts[0]);
+  const s = Number(parts[1].replace(/%$/, ''));
+  const l = Number(parts[2].replace(/%$/, ''));
+
+  if (!Number.isFinite(h) || !Number.isFinite(s) || !Number.isFinite(l)) return null;
+  if (h < 0 || h > 360) return null;
+  if (s < 0 || s > 100) return null;
+  if (l < 0 || l > 100) return null;
+
+  return { h, s, l };
+}
+
+// Validates that a stored value is an image data URL we can persist and render.
+export function isImageDataUrl(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^data:image\/[a-zA-Z0-9+.-]+;base64,/.test(value)
+  );
+}
+
+export type LogoValidationResult = { ok: true } | { ok: false; error: string };
+
+// Validates an uploaded logo file at selection time. Rejects empty or
+// non-image files, and (where supported) tries to actually decode the image so
+// renamed or corrupt files are caught before they are stored as a broken logo.
+export async function validateLogoFile(
+  file: File | null | undefined,
+): Promise<LogoValidationResult> {
+  if (!file) return { ok: false, error: 'No file selected.' };
+  if (!(file.size > 0)) return { ok: false, error: 'The selected file is empty.' };
+  if (typeof file.type !== 'string' || !file.type.startsWith('image/')) {
+    return { ok: false, error: 'Please choose an image file (PNG, JPG, SVG, or GIF).' };
+  }
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      bitmap.close?.();
+    } catch {
+      return { ok: false, error: 'The selected file is not a valid image.' };
+    }
+  }
+  return { ok: true };
+}
+
 const DEFAULT_CONFIG: UiConfig = {
   // Cyan — matches --primary in index.css light mode
   primaryColor: '190 100% 45%',
@@ -25,11 +83,14 @@ function loadConfig(): UiConfig {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_CONFIG;
     const parsed = JSON.parse(raw) as Partial<UiConfig>;
+    const primaryColor = (() => {
+      const hsl = parseHslTriplet(parsed.primaryColor);
+      return hsl ? `${hsl.h} ${hsl.s}% ${hsl.l}%` : DEFAULT_CONFIG.primaryColor;
+    })();
+
     return {
-      primaryColor: (typeof parsed.primaryColor === 'string' && parsed.primaryColor)
-        ? parsed.primaryColor
-        : DEFAULT_CONFIG.primaryColor,
-      customLogoDataUrl: typeof parsed.customLogoDataUrl === 'string'
+      primaryColor,
+      customLogoDataUrl: isImageDataUrl(parsed.customLogoDataUrl)
         ? parsed.customLogoDataUrl
         : DEFAULT_CONFIG.customLogoDataUrl,
     };
@@ -56,17 +117,13 @@ function applyCssVariables(config: UiConfig) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   const p = config.primaryColor;
+  const hsl = parseHslTriplet(p);
+  if (!hsl) return;
 
   // Parse HSL to compute a slightly lighter dark-mode variant
-  const parts = p.split(' ');
-  if (parts.length < 3) return; // malformed value — CSS sheet defaults remain in effect
-  const h = parts[0];
-  const s = parts[1];
-  const lVal = parseFloat(parts[2]);
-  if (Number.isNaN(lVal)) return;
-  const lDark = Math.min(lVal + 5, 100);
-  const pDark = `${h} ${s} ${lDark}%`;
-  const primaryForeground = getPrimaryForeground(lVal);
+  const lDark = Math.min(hsl.l + 5, 100);
+  const pDark = `${hsl.h} ${hsl.s}% ${lDark}%`;
+  const primaryForeground = getPrimaryForeground(hsl.l);
   const primaryForegroundDark = getPrimaryForeground(lDark);
 
   // Override the CSS variables that carry the user-selected primary color.
@@ -90,6 +147,47 @@ function applyCssVariables(config: UiConfig) {
     document.head.appendChild(styleEl);
   }
   styleEl.textContent = `.dark { --primary: ${pDark}; --primary-foreground: ${primaryForegroundDark}; --ring: ${pDark}; --sidebar-primary: ${pDark}; --sidebar-primary-foreground: ${primaryForegroundDark}; --sidebar-ring: ${pDark}; --chart-1: ${pDark}; --cyan-500: ${pDark}; }`;
+}
+
+// Convert an HSL triplet to a hex color string. Returns a safe fallback when
+// the input is not a valid triplet so callers never render NaN-based colors.
+export function hslToHex(hslTriplet: string): string {
+  const hsl = parseHslTriplet(hslTriplet);
+  if (!hsl) return '#000000';
+
+  const { h, s, l } = hsl;
+  const sNorm = s / 100;
+  const lNorm = l / 100;
+
+  const c = (1 - Math.abs(2 * lNorm - 1)) * sNorm;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = lNorm - c / 2;
+
+  let rPrime = 0;
+  let gPrime = 0;
+  let bPrime = 0;
+
+  if (h >= 0 && h < 60) {
+    rPrime = c; gPrime = x; bPrime = 0;
+  } else if (h >= 60 && h < 120) {
+    rPrime = x; gPrime = c; bPrime = 0;
+  } else if (h >= 120 && h < 180) {
+    rPrime = 0; gPrime = c; bPrime = x;
+  } else if (h >= 180 && h < 240) {
+    rPrime = 0; gPrime = x; bPrime = c;
+  } else if (h >= 240 && h < 300) {
+    rPrime = x; gPrime = 0; bPrime = c;
+  } else {
+    rPrime = c; gPrime = 0; bPrime = x;
+  }
+
+  const r = Math.round((rPrime + m) * 255);
+  const g = Math.round((gPrime + m) * 255);
+  const b = Math.round((bPrime + m) * 255);
+
+  const toHex = (v: number) => v.toString(16).padStart(2, '0');
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
 export function useUiConfig() {

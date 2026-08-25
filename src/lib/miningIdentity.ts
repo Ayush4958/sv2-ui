@@ -49,23 +49,35 @@ export function parseSriIdentity(identity: string): SriIdentityParts {
   return { address: identity, workerName: '', donationPercent: 0 };
 }
 
+export function getWorkerNameError(workerName: string): string | null {
+  if (workerName.includes('/')) return 'Worker name must not contain "/"';
+  return null;
+}
+
 export function buildSriIdentity(address: string, workerName: string, donationPercent: number): string {
   const addr = address.trim();
   const worker = workerName.trim();
 
+  // A worker name beginning with `<pct>/` (e.g. `25/bc1q…`) is reinterpreted by
+  // the SRI parser as a partial-donation identity, letting a malicious worker
+  // label overwrite the payout fields (field injection). Strip slashes ONLY in
+  // that dangerous shape. Every other worker name is preserved verbatim, so
+  // legitimate names like `rig/1` are neither stripped nor silently rewritten.
+  const safeWorker = /^\d{1,2}\//.test(worker) ? worker.replace(/\//g, '') : worker;
+
   if (donationPercent >= 100) {
-    return worker ? `sri/donate/${worker}` : 'sri/donate';
+    return safeWorker ? `sri/donate/${safeWorker}` : 'sri/donate';
   }
 
   if (donationPercent > 0 && donationPercent < 100) {
     if (!addr) return '';
-    return worker
-      ? `sri/donate/${donationPercent}/${addr}/${worker}`
+    return safeWorker
+      ? `sri/donate/${donationPercent}/${addr}/${safeWorker}`
       : `sri/donate/${donationPercent}/${addr}`;
   }
 
   if (!addr) return '';
-  return worker ? `sri/solo/${addr}/${worker}` : `sri/solo/${addr}`;
+  return safeWorker ? `sri/solo/${addr}/${safeWorker}` : `sri/solo/${addr}`;
 }
 
 export function normalizeSriIdentity(identity: string): string {
@@ -189,6 +201,10 @@ export function getSriIdentityError(identity: string, network: BitcoinNetwork): 
   if (!identity) return 'Username is required';
   if (!isTomlSafeIdentifier(identity)) return 'Username contains characters that are not allowed';
 
+  const { workerName } = parseSriIdentity(identity);
+  const workerError = getWorkerNameError(workerName);
+  if (workerError) return workerError;
+
   if (identity === 'sri/donate') return null;
 
   if (identity.startsWith('sri/solo/')) {
@@ -224,11 +240,19 @@ export function getPoolIdentityError(
   pool: PoolConfig | null | undefined,
   miningMode: MiningMode | null,
   network: BitcoinNetwork,
+  rawWorkerName?: string,
 ): string | null {
   const identity = pool?.user_identity ?? '';
 
   if (miningMode === 'solo') {
     if (isSriPool(pool)) {
+      // The raw worker name is the only place a slash can be caught before it
+      // is merged into (and possibly neutralized within) the structured
+      // identity, so surface it here when the caller has it.
+      if (rawWorkerName !== undefined) {
+        const workerError = getWorkerNameError(rawWorkerName);
+        if (workerError) return workerError;
+      }
       return getSriIdentityError(identity, network);
     }
 

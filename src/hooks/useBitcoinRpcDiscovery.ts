@@ -10,7 +10,6 @@ export interface BitcoinRpcDiscoveryResult {
   chain: string;
   version: number;
   initialBlockDownload: boolean;
-  logpath: string;
 }
 
 async function discoverBitcoinRpc(): Promise<BitcoinRpcDiscoveryResult[]> {

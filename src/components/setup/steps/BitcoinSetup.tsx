@@ -73,7 +73,6 @@ export function BitcoinSetup({ data, updateData, onNext, notice, onDismissNotice
         network,
         customDataDir,
         socket_path: socketPath,
-        ...(discoveryApplied && discoveredNodes?.length ? { discoveredLogPath: (discoveredNodes.find(n => n.network === network) ?? discoveredNodes[0])?.logpath } : {}),
       } as BitcoinConfig,
     });
   }, [coreVersion, os, network, customDataDir, socketPath, updateData, discoveryApplied, discoveredNodes]);

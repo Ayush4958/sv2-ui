@@ -1,5 +1,6 @@
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
+import bs58check from 'bs58check';
 import type { BitcoinNetwork } from './types.js';
 
 // Required by bitcoinjs-lib for validating taproot addresses.
@@ -57,4 +58,38 @@ export function getIdentifierError(value: string): string | null {
     return 'Contains characters that are not allowed (quotes, backslashes, control characters)';
   }
   return null;
+}
+
+// Pubkeys in pool docs / Discord are almost always shown wrapped in quotes,
+// and users copy them with the quotes. Strip one matched pair, then trim.
+export function stripWrappingQuotes(v: string): string {
+  const trimmed = v.trim();
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+// The SRI Noise-protocol authority key is base58check-encoded, so a corrupted
+// character or missing byte fails the checksum — which is exactly what
+// copy-paste mistakes produce.
+//
+// The value must already be canonical: no wrapping quotes (single or double)
+// and no surrounding whitespace. Stripping here would let a quoted key sail
+// through validation and land in the generated TOML as `authority_pubkey =
+// "'...'"`, which Translator/JDC then receive as an invalid key. Callers are
+// expected to normalize (e.g. via stripWrappingQuotes) before persisting.
+export function isValidPoolAuthorityPubkey(v: string): boolean {
+  if (typeof v !== 'string' || !v) return false;
+  if (stripWrappingQuotes(v) !== v) return false;
+  try {
+    const decoded = bs58check.decode(v);
+    return decoded.length === 34;
+  } catch {
+    return false;
+  }
 }

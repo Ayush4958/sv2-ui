@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { generateJdcConfig, generateTranslatorConfig, normalizeSetupData } from './config-generator.js';
+import { BRAIINS_POOL_AUTHORITY_KEY } from '@sv2-ui/shared';
 import type { SetupData } from './types.js';
 
 const BASE_DATA_30: SetupData = {
@@ -303,13 +304,31 @@ test('normalization enables translator aggregation when a fallback pool requires
         name: 'Braiins Pool',
         address: 'stratum.braiins.com',
         port: 3333,
-        authority_public_key: 'fallback-key',
+        authority_public_key: BRAIINS_POOL_AUTHORITY_KEY,
         user_identity: 'miner.fallback',
       },
     ],
   });
 
   assert.equal(normalized.translator?.aggregate_channels, true);
+});
+
+test('normalization does not aggregate a pool that only matches Braiins by address', () => {
+  const normalized = normalizeSetupData({
+    ...NO_JD_DATA,
+    fallbackPools: [
+      {
+        name: 'Braiins Pool',
+        address: 'stratum.braiins.com',
+        port: 3333,
+        authority_public_key: 'fallback-key',
+        user_identity: 'miner.fallback',
+      },
+    ],
+  });
+
+  assert.equal(normalized.translator?.aggregate_channels, false,
+    'a wrong authority key must not trigger aggregation even on the Braiins address');
 });
 
 test('translator puts user_identity inside [[upstreams]] for JD mode', () => {

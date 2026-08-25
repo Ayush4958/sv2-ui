@@ -6,14 +6,14 @@ import { PoolIdentityFields } from '@/components/pools/PoolIdentityFields';
 import { PoolPriorityEditor } from '@/components/pools/PoolPriorityEditor';
 import {
   getPoolsForMode,
-  isSamePool,
+  isSameTrustedPool,
   type KnownPool,
 } from '@/lib/pools';
 import { normalizePoolPriorityIdentities } from '@/lib/miningIdentity';
-import { isPoolComplete, isPoolConnectionComplete } from '@/lib/poolValidation';
+import { isPoolComplete, isPoolConnectionComplete, isPoolFormValid } from '@/lib/poolValidation';
 
 function poolMatchesPreset(pool: PoolConfig | null | undefined, preset: KnownPool): boolean {
-  return isSamePool(pool, preset);
+  return isSameTrustedPool(pool, preset);
 }
 
 function getSelectedPreset(pool: PoolConfig | null | undefined, pools: KnownPool[]): KnownPool | null {
@@ -73,7 +73,16 @@ export function PoolConfigStep({ data, updateData, onNext }: PoolConfigStepProps
     selectedPools.every(isPoolConnectionComplete);
   const primaryPoolValid = isPoolComplete(primaryPool, data.miningMode, network);
   const fallbackPoolsValid = fallbackPools.every((pool) => isPoolComplete(pool, data.miningMode, network));
-  const isValid = primaryPoolValid && fallbackPoolsValid;
+  // Identity fields report blocking errors (e.g. a raw worker name that gets
+  // sanitized out of the stored identity); they must gate Continue too.
+  const [primaryIdentityError, setPrimaryIdentityError] = useState<string | null>(null);
+  const [fallbackIdentityErrors, setFallbackIdentityErrors] = useState<Record<number, string | null>>({});
+  const isValid = isPoolFormValid({
+    pools: selectedPools,
+    miningMode: data.miningMode,
+    network,
+    reportedErrors: { 0: primaryIdentityError, ...fallbackIdentityErrors },
+  });
   const identityLabel = getIdentityFieldLabel(data.miningMode);
   const fallbackIdentityBlocked = primaryPoolValid && !fallbackPoolsValid;
 
@@ -101,6 +110,7 @@ export function PoolConfigStep({ data, updateData, onNext }: PoolConfigStepProps
             network={network}
             idPrefix="primary-pool"
             onChange={updatePrimaryPool}
+            onBlockingErrorChange={setPrimaryIdentityError}
           />
         )}
 
@@ -117,6 +127,9 @@ export function PoolConfigStep({ data, updateData, onNext }: PoolConfigStepProps
             hasBlockingError={fallbackIdentityBlocked}
             onToggle={() => setShowFallbackIdentityFields((current) => !current)}
             onChange={updateFallbackPool}
+            onFieldBlockingError={(index, error) => {
+              setFallbackIdentityErrors((current) => ({ ...current, [index + 1]: error }));
+            }}
           />
         )}
 
