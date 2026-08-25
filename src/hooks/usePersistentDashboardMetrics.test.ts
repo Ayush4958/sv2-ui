@@ -81,7 +81,7 @@ test('normalizeMetricKey hashes over-length keys instead of dropping them', () =
   assert.equal(normalizeMetricKey(AGGREGATE_KEY), AGGREGATE_KEY);
 });
 
-test('mergeMetricEntries bounds entry count and preserves evicted totals in the aggregate bucket', () => {
+test('mergeMetricEntries bounds the entry count for over-cap snapshots', () => {
   const channelCount = 300;
   const entries = Array.from({ length: channelCount }, (_, index) => ({
     key: `ch:${index}`,
@@ -92,14 +92,41 @@ test('mergeMetricEntries bounds entry count and preserves evicted totals in the 
   const realKeys = Object.keys(next).filter((key) => key !== AGGREGATE_KEY);
 
   assert.ok(realKeys.length <= 256, `expected <=256 real keys, got ${realKeys.length}`);
-  assert.ok(AGGREGATE_KEY in next, 'aggregate bucket must exist after eviction');
-  const total = Object.values(next).reduce((sum, value) => sum + value, 0);
-  assert.equal(total, channelCount, 'lifetime total must be preserved via the aggregate bucket');
+  assert.ok(
+    !realKeys.some((key) => next[key] > 1),
+    'retained entries must keep their own values',
+  );
 });
 
-test('mergeMetricEntries keeps totals monotonic across channel churn', () => {
+test('repeated identical over-cap snapshots never inflate scalar totals', () => {
+  const entries = Array.from({ length: 300 }, (_, index) => ({
+    key: `ch:${index}`,
+    value: 1,
+  }));
+
+  const sum = (state: Record<string, number>) =>
+    Object.values(state).reduce((total, value) => total + value, 0);
+
+  let state = mergeMetricEntries({}, entries).next;
+  const baseline = sum(state);
+  assert.ok(baseline <= 300 && baseline >= 256, `unexpected baseline total ${baseline}`);
+
+  for (let merge = 2; merge <= 11; merge += 1) {
+    state = mergeMetricEntries(state, entries).next;
+    const total = sum(state);
+    assert.equal(
+      total,
+      baseline,
+      `merge ${merge} of an unchanged snapshot moved the total to ${total}`,
+    );
+  }
+
+  const realKeys = Object.keys(state).filter((key) => key !== AGGREGATE_KEY);
+  assert.ok(realKeys.length <= 256, 'entry count must stay bounded across repeats');
+});
+
+test('mergeMetricEntries keeps totals monotonic and bounded across channel churn', () => {
   let state: Record<string, number> = {};
-  let cumulativeSeen = 0;
   let previousTotal = 0;
 
   for (let batch = 0; batch < 5; batch += 1) {
@@ -108,34 +135,73 @@ test('mergeMetricEntries keeps totals monotonic across channel churn', () => {
       value: 1,
     }));
     state = mergeMetricEntries(state, entries).next;
-    cumulativeSeen += 300;
     const total = Object.values(state).reduce((sum, value) => sum + value, 0);
     assert.ok(total >= previousTotal, 'lifetime total must never decrease');
+    assert.ok(
+      total <= 256 * (batch + 1),
+      'the bounded store can retain at most one full cohort per churn round',
+    );
     previousTotal = total;
   }
 
-  assert.equal(previousTotal, cumulativeSeen, 'every channel counted exactly once across churn');
+  assert.equal(previousTotal, 1280, 'each churn round retains exactly one full cohort');
 });
 
-test('mergeShareStatsEntries preserves lifetime totals when evicting entries', () => {
-  const channelCount = 300;
-  const entries = Array.from({ length: channelCount }, (_, index) => ({
+test('repeated identical over-cap snapshots never inflate share-stat totals', () => {
+  const entries = Array.from({ length: 300 }, (_, index) => ({
     key: `ch:${index}`,
     acknowledged: 1,
-    submitted: 1,
-    rejected: 1,
+    submitted: 2,
+    rejected: 3,
     rejectedByReason: {},
   }));
+  type ShareStatsState = ReturnType<typeof mergeShareStatsEntries>['next'];
+  const counters = (state: ShareStatsState) =>
+    Object.values(state).reduce(
+      (total, entry) => total + entry.acknowledged + entry.submitted + entry.rejected,
+      0,
+    );
 
-  const { next } = mergeShareStatsEntries({}, entries);
-  const realKeys = Object.keys(next).filter((key) => key !== AGGREGATE_KEY);
+  let state = mergeShareStatsEntries({}, entries).next;
+  const baseline = counters(state);
+  assert.ok(baseline <= 300 * 6, `unexpected baseline total ${baseline}`);
 
-  assert.ok(realKeys.length <= 256, `expected <=256 real keys, got ${realKeys.length}`);
-  const totalAcknowledged = Object.values(next).reduce((sum, entry) => sum + entry.acknowledged, 0);
-  assert.equal(totalAcknowledged, channelCount, 'share-stats lifetime total preserved');
+  for (let merge = 2; merge <= 11; merge += 1) {
+    state = mergeShareStatsEntries(state, entries).next;
+    const total = counters(state);
+    assert.equal(
+      total,
+      baseline,
+      `merge ${merge} of an unchanged snapshot moved the totals to ${total}`,
+    );
+  }
 });
 
-test('usePersistentBestDifficulty excludes the aggregate bucket from the max', () => {
+test('evicting the best-difficulty holder preserves the displayed maximum', () => {
+  const maxOf = (state: Record<string, number>) =>
+    Object.values(state).reduce((best, value) => Math.max(best, value), 0);
+
+  const baseEntries = Array.from({ length: 300 }, (_, index) => ({
+    key: `ch:${index}`,
+    value: 10,
+  }));
+  let state = mergeMetricEntries({}, baseEntries, 'max').next;
+  assert.equal(maxOf(state), 10);
+
+  // A much higher difficulty arrives alongside the base set, forcing the
+  // eviction of the channel that reported it; the lifetime best must survive.
+  const whaleEntries = [...baseEntries, { key: 'ch:whale', value: 1_000_000 }];
+  state = mergeMetricEntries(state, whaleEntries, 'max').next;
+  assert.equal(maxOf(state), 1_000_000, 'the evicted lifetime best must stay visible');
+
+  for (let merge = 3; merge <= 7; merge += 1) {
+    state = mergeMetricEntries(state, whaleEntries, 'max').next;
+    assert.equal(maxOf(state), 1_000_000, `merge ${merge} lost the lifetime best`);
+    assert.ok(maxOf(state) >= 1_000_000, 'displayed best difficulty must never decrease');
+  }
+});
+
+test('usePersistentBestDifficulty treats the aggregate bucket as a lifetime maximum', () => {
   const storedState = JSON.stringify({
     [AGGREGATE_KEY]: 9999,
     'real:1': 5,
@@ -149,7 +215,76 @@ test('usePersistentBestDifficulty excludes the aggregate bucket from the max', (
     }
 
     renderToString(createElement(Probe));
-    assert.equal(observed, 5, 'max must exclude the aggregate bucket');
+    assert.equal(observed, 9999, 'max must include the lifetime-best aggregate bucket');
+  });
+});
+
+test('channel churn with unique rejection reasons keeps the aggregate bounded', () => {
+  type ShareStatsState = ReturnType<typeof mergeShareStatsEntries>['next'];
+  let state: ShareStatsState = {};
+
+  for (let batch = 0; batch < 6; batch += 1) {
+    const entries = Array.from({ length: 300 }, (_, index) => ({
+      key: `ch:${batch}-${index}`,
+      acknowledged: 1,
+      submitted: 1,
+      rejected: 2,
+      rejectedByReason: {
+        [`r:${batch}:${index}`]: 1,
+        [`over-length:${batch}:${index}:${'x'.repeat(200)}`]: 1,
+      },
+    }));
+    state = mergeShareStatsEntries(state, entries).next;
+
+    const reasons = Object.keys(state[AGGREGATE_KEY]?.rejectedByReason ?? {});
+    assert.ok(
+      reasons.length <= 32,
+      `aggregate bucket accumulated ${reasons.length} unique rejection labels`,
+    );
+    for (const reason of reasons) {
+      assert.ok(reason.length <= 128, 'aggregate bucket kept an over-length reason label');
+    }
+  }
+});
+
+test('loading bounds an oversized stored aggregate rejection-reason map', () => {
+  const hostileReasons: Record<string, number> = {};
+  for (let index = 0; index < 5000; index += 1) {
+    hostileReasons[`attacker:${index}:${'y'.repeat(300)}`] = index + 1;
+  }
+  for (let index = 0; index < 40; index += 1) {
+    hostileReasons[`ok:${index}`] = 1000 - index;
+  }
+  const storedState = JSON.stringify({
+    [AGGREGATE_KEY]: {
+      acknowledged: 1,
+      submitted: 1,
+      rejected: 5040,
+      rejectedByReason: hostileReasons,
+    },
+    'ch:1': { acknowledged: 0, submitted: 0, rejected: 0, rejectedByReason: {} },
+  });
+
+  withMockLocalStorage({ 'sv2_share_stats:default': storedState }, () => {
+    let observedReasons: Array<{ reason: string; count: number }> = [];
+    function Probe() {
+      observedReasons = usePersistentShareStats([], 'default').rejectionReasons;
+      return null;
+    }
+
+    renderToString(createElement(Probe));
+    assert.ok(
+      observedReasons.length <= 32,
+      `loaded ${observedReasons.length} aggregate reason labels`,
+    );
+    for (const item of observedReasons) {
+      assert.ok(item.reason.length <= 128, 'loaded an over-length aggregate reason label');
+    }
+    assert.deepEqual(
+      observedReasons.slice(0, 3).map((item) => item.reason),
+      ['ok:0', 'ok:1', 'ok:2'],
+      'surviving labels must be ranked by count',
+    );
   });
 });
 

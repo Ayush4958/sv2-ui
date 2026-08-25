@@ -47,12 +47,26 @@ const MAX_ENTRY_KEY_LENGTH = 256;
 const MAX_REASON_LENGTH = 128;
 const MAX_SHARE_STATS_STORAGE_LENGTH = 2 * 1024 * 1024;
 
-// Reserved bucket that accumulates the counts of entries evicted under the
-// entry-count cap so lifetime totals can never decrease.
+// Reserved bucket that absorbs entries evicted under the entry-count cap so
+// lifetime totals can never decrease. Cumulative counters (blocks_found) bank
+// additively; best_difficulty banks a running maximum.
 export const AGGREGATE_KEY = '@@evicted@@';
+
+type MetricAggregationMode = 'sum' | 'max';
 
 function normalizeCount(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+// Keeps at most MAX_REJECTION_REASONS labels of at most MAX_REASON_LENGTH
+// characters, preferring the highest counts (the display sorts by count too).
+function clampReasons(reasons: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(reasons)
+      .filter(([reason]) => reason.length <= MAX_REASON_LENGTH)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, MAX_REJECTION_REASONS),
+  );
 }
 
 // Stable, synchronous, dependency-free hash so telemetry-derived keys that
@@ -126,11 +140,13 @@ function normalizeShareStatsState(value: unknown): PersistedShareStatsState {
       rejected: normalizeCount(agg.rejected),
       rejectedByReason:
         storedReasons && typeof storedReasons === 'object' && !Array.isArray(storedReasons)
-          ? Object.fromEntries(
-              Object.entries(storedReasons as Record<string, unknown>).map(([reason, count]) => [
-                reason,
-                normalizeCount(count),
-              ]),
+          ? clampReasons(
+              Object.fromEntries(
+                Object.entries(storedReasons as Record<string, unknown>).map(([reason, count]) => [
+                  reason,
+                  normalizeCount(count),
+                ]),
+              ),
             )
           : {},
     };
@@ -174,9 +190,16 @@ function normalizeShareStatsState(value: unknown): PersistedShareStatsState {
 // Pure merge used by usePersistentMetric. Bounds key length (via hashing),
 // normalizes values, and enforces the entry-count cap by moving evicted
 // per-key maxima into the aggregate bucket so totals stay monotonic.
+//
+// 'sum' metrics (blocks_found) bank evicted values additively; 'max' metrics
+// (best_diff) bank a running maximum, which is idempotent under churn.
+// Entries the current snapshot itself just created are never banked additively,
+// otherwise re-supplying the same over-cap snapshot would inflate totals on
+// every merge.
 export function mergeMetricEntries(
   prev: PersistedMetricState,
   entries: PersistedMetricEntry[],
+  mode: MetricAggregationMode = 'sum',
 ): { next: PersistedMetricState; changed: boolean } {
   let changed = false;
   const next: PersistedMetricState = { ...prev };
@@ -185,6 +208,9 @@ export function mergeMetricEntries(
     .map((entry) => ({ key: normalizeMetricKey(entry.key), value: entry.value }))
     .filter((entry) => entry.key !== AGGREGATE_KEY);
   const liveKeys = new Set(boundedEntries.map((entry) => entry.key));
+  const createdKeys = new Set(
+    boundedEntries.filter(({ key }) => !(key in prev)).map(({ key }) => key),
+  );
 
   boundedEntries.forEach(({ key, value }) => {
     const normalizedValue = Math.max(0, value);
@@ -196,10 +222,22 @@ export function mergeMetricEntries(
 
   const evictable = Object.keys(next).filter((k) => k !== AGGREGATE_KEY);
   while (evictable.length > MAX_SHARE_STATS_ENTRIES) {
-    const evictCandidate = evictable.find((k) => !liveKeys.has(k)) ?? evictable[0];
-    next[AGGREGATE_KEY] = (next[AGGREGATE_KEY] ?? 0) + (next[evictCandidate] ?? 0);
-    delete next[evictCandidate];
-    evictable.splice(evictable.indexOf(evictCandidate), 1);
+    // Prefer entries that are no longer reported, then entries the current
+    // snapshot itself just created, and only then established live entries.
+    const victim =
+      evictable.find((k) => !liveKeys.has(k)) ??
+      evictable.find((k) => createdKeys.has(k)) ??
+      evictable[0];
+    const victimValue = next[victim] ?? 0;
+    const freshlyCreatedLive = liveKeys.has(victim) && createdKeys.has(victim);
+    if (victimValue > 0 && !(mode === 'sum' && freshlyCreatedLive)) {
+      next[AGGREGATE_KEY] =
+        mode === 'max'
+          ? Math.max(next[AGGREGATE_KEY] ?? 0, victimValue)
+          : (next[AGGREGATE_KEY] ?? 0) + victimValue;
+    }
+    delete next[victim];
+    evictable.splice(evictable.indexOf(victim), 1);
     changed = true;
   }
 
@@ -208,7 +246,10 @@ export function mergeMetricEntries(
 
 // Pure merge used by usePersistentShareStatsEntries. Bounds key length (via
 // hashing, instead of silently dropping) and enforces the entry-count cap by
-// folding evicted counts into the aggregate share-stats bucket.
+// folding evicted counts into the aggregate share-stats bucket. Entries the
+// current snapshot itself just created are never banked, otherwise repeatedly
+// re-supplying the same over-cap snapshot would inflate totals. The aggregate
+// rejection-reason map stays within the reason-count/length bounds.
 export function mergeShareStatsEntries(
   prev: PersistedShareStatsState,
   entries: PersistedShareStatsEntry[],
@@ -220,34 +261,12 @@ export function mergeShareStatsEntries(
     .map((entry) => ({ ...entry, key: normalizeMetricKey(entry.key) }))
     .filter((entry) => entry.key !== AGGREGATE_KEY);
   const incomingEntryKeys = new Set(boundedEntries.map((entry) => entry.key));
+  const createdKeys = new Set(
+    boundedEntries.filter(({ key }) => !(key in prev)).map(({ key }) => key),
+  );
 
   boundedEntries.forEach((entry) => {
-    const existing = next[entry.key];
-    const realKeyCount = Object.keys(next).filter((k) => k !== AGGREGATE_KEY).length;
-    if (!existing && realKeyCount >= MAX_SHARE_STATS_ENTRIES) {
-      const evictable = Object.keys(next).filter((k) => k !== AGGREGATE_KEY);
-      const keyToEvict = evictable.find((k) => !incomingEntryKeys.has(k)) ?? evictable[0];
-      const evicted = next[keyToEvict];
-      if (evicted) {
-        const aggregate = next[AGGREGATE_KEY] ?? {
-          acknowledged: 0,
-          submitted: 0,
-          rejected: 0,
-          rejectedByReason: {},
-        };
-        aggregate.acknowledged += evicted.acknowledged;
-        aggregate.submitted += evicted.submitted;
-        aggregate.rejected += evicted.rejected;
-        for (const [reason, count] of Object.entries(evicted.rejectedByReason)) {
-          aggregate.rejectedByReason[reason] = (aggregate.rejectedByReason[reason] ?? 0) + count;
-        }
-        next[AGGREGATE_KEY] = aggregate;
-        delete next[keyToEvict];
-        changed = true;
-      }
-    }
-
-    const current = existing ?? {
+    const current = next[entry.key] ?? {
       acknowledged: 0,
       submitted: 0,
       rejected: 0,
@@ -294,6 +313,39 @@ export function mergeShareStatsEntries(
 
     next[entry.key] = nextEntry;
   });
+
+  const evictable = Object.keys(next).filter((k) => k !== AGGREGATE_KEY);
+  while (evictable.length > MAX_SHARE_STATS_ENTRIES) {
+    // Prefer entries that are no longer reported, then entries the current
+    // snapshot itself just created, and only then established live entries.
+    const victim =
+      evictable.find((k) => !incomingEntryKeys.has(k)) ??
+      evictable.find((k) => createdKeys.has(k)) ??
+      evictable[0];
+    const freshlyCreatedLive = incomingEntryKeys.has(victim) && createdKeys.has(victim);
+    if (!freshlyCreatedLive) {
+      const aggregate = next[AGGREGATE_KEY] ?? {
+        acknowledged: 0,
+        submitted: 0,
+        rejected: 0,
+        rejectedByReason: {},
+      };
+      const evicted = next[victim];
+      if (evicted) {
+        aggregate.acknowledged += evicted.acknowledged;
+        aggregate.submitted += evicted.submitted;
+        aggregate.rejected += evicted.rejected;
+        for (const [reason, count] of Object.entries(evicted.rejectedByReason)) {
+          aggregate.rejectedByReason[reason] = (aggregate.rejectedByReason[reason] ?? 0) + count;
+        }
+        aggregate.rejectedByReason = clampReasons(aggregate.rejectedByReason);
+        next[AGGREGATE_KEY] = aggregate;
+      }
+    }
+    delete next[victim];
+    evictable.splice(evictable.indexOf(victim), 1);
+    changed = true;
+  }
 
   return { next, changed };
 }
@@ -362,6 +414,7 @@ function usePersistentMetric(
   entries: PersistedMetricEntry[],
   configKey: string,
   metricKey: string,
+  mode: MetricAggregationMode,
 ): PersistedMetricState {
   const [persistedCounts, updatePersistedCounts] = usePersistentState(
     metricKey,
@@ -375,10 +428,10 @@ function usePersistentMetric(
     if (entries.length === 0) return;
 
     updatePersistedCounts((prev) => {
-      const { next, changed } = mergeMetricEntries(prev, entries);
+      const { next, changed } = mergeMetricEntries(prev, entries, mode);
       return changed ? next : prev;
     });
-  }, [entries, updatePersistedCounts]);
+  }, [entries, updatePersistedCounts, mode]);
 
   return persistedCounts;
 }
@@ -411,7 +464,7 @@ export function usePersistentBlocksFound(
   entries: PersistedMetricEntry[],
   configKey: string,
 ): number {
-  const persistedCounts = usePersistentMetric(entries, configKey, 'blocks_found');
+  const persistedCounts = usePersistentMetric(entries, configKey, 'blocks_found', 'sum');
 
   return useMemo(
     () => Object.values(persistedCounts).reduce((sum, count) => sum + count, 0),
@@ -423,14 +476,12 @@ export function usePersistentBestDifficulty(
   entries: PersistedMetricEntry[],
   configKey: string,
 ): number {
-  const persistedCounts = usePersistentMetric(entries, configKey, 'best_diff');
+  const persistedCounts = usePersistentMetric(entries, configKey, 'best_diff', 'max');
 
   return useMemo(
-    () =>
-      Object.entries(persistedCounts).reduce(
-        (max, [key, value]) => (key === AGGREGATE_KEY ? max : Math.max(max, value)),
-        0,
-      ),
+    // The aggregate bucket holds the running maximum of evicted entries, so
+    // including it keeps the displayed best difficulty from ever decreasing.
+    () => Object.values(persistedCounts).reduce((max, value) => Math.max(max, value), 0),
     [persistedCounts],
   );
 }
