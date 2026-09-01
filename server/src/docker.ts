@@ -111,7 +111,7 @@ function resolveDockerConnection(): DockerConnectionConfig {
   };
 }
 
-function normalizeDockerError(error: unknown): Error {
+export function normalizeDockerError(error: unknown): Error {
   if (!(error instanceof Error)) {
     return new Error(String(error));
   }
@@ -121,14 +121,27 @@ function normalizeDockerError(error: unknown): Error {
     return error;
   }
 
-  const availableSockets = listAvailableDockerSockets();
-  const socketSummary = availableSockets.length > 0
-    ? `Detected local Docker sockets: ${availableSockets.join(', ')}.`
-    : 'No known local Docker socket paths were found.';
+  const endpoint = dockerConnection.endpoint;
+  const source = dockerConnection.source;
+
+  if (code === 'EACCES' || code === 'EPERM') {
+    return new Error(
+      `Permission denied when accessing Docker at ${endpoint} (${source}). ` +
+      `Check file permissions or ensure your user is in the 'docker' group.`
+    );
+  }
+
+  const availableSockets = listAvailableDockerSockets().filter(s => s !== endpoint);
+  
+  let helpText = 'Ensure Docker Engine or Docker Desktop is running.';
+  if (availableSockets.length > 0) {
+    helpText += ` Other available sockets found: ${availableSockets.join(', ')}. Try setting DOCKER_SOCKET_PATH to one of these.`;
+  } else {
+    helpText += ` Or check your DOCKER_SOCKET_PATH / DOCKER_HOST endpoint.`;
+  }
 
   return new Error(
-    `Docker is not reachable via ${dockerConnection.endpoint} (${dockerConnection.source}). ${socketSummary} ` +
-    'Start Docker Desktop or Docker Engine, or set DOCKER_SOCKET_PATH/DOCKER_HOST to a reachable endpoint.'
+    `Docker is not reachable at ${endpoint} (${source}). ${helpText}`
   );
 }
 
@@ -285,10 +298,10 @@ export async function probeBitcoinSocketWithDocker(
     // Step 2: Full socket validation
     return await validateSocketWithDocker(socketPath, containerSocketPath);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const normalizedError = normalizeDockerError(error);
     return {
       valid: false,
-      error: `Failed to validate socket: ${message}`,
+      error: `Failed to validate socket: ${normalizedError.message}`,
     };
   }
 }
@@ -324,8 +337,8 @@ export async function probeBitcoinRpcWithDocker(
         if (error instanceof Error && error.message.includes('bind source path does not exist')) {
           throw error;
         }
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`${transport.name}: ${message}`);
+        const normalizedError = normalizeDockerError(error);
+        errors.push(`${transport.name}: ${normalizedError.message}`);
       }
     }
 
@@ -337,10 +350,10 @@ export async function probeBitcoinRpcWithDocker(
     if (error instanceof Error && error.message.includes('bind source path does not exist')) {
       throw error;
     }
-    const message = error instanceof Error ? error.message : String(error);
+    const normalizedError = normalizeDockerError(error);
     return {
       valid: false,
-      error: `Failed to validate RPC connection: ${message}`,
+      error: `Failed to validate RPC connection: ${normalizedError.message}`,
     };
   }
 }
