@@ -1,10 +1,11 @@
 import type { BitcoinNetwork, MiningMode, PoolConfig } from '@sv2-ui/shared';
 import { getPoolIdentityError } from './miningIdentity';
-import { isValidPoolAuthorityPubkey } from './utils';
+import { isValidPoolAuthorityPubkey, isValidPoolAddress } from './utils';
 
 export function isPoolConnectionComplete(pool: PoolConfig | null | undefined): boolean {
   return Boolean(
     pool?.address &&
+    isValidPoolAddress(pool.address) &&
     Number.isInteger(pool.port) &&
     pool.port > 0 &&
     pool.port <= 65535 &&

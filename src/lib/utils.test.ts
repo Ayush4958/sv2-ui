@@ -8,7 +8,10 @@ import {
   getPoolAuthorityPubkeyError,
   isTomlSafeIdentifier,
   getIdentifierError,
+  isValidPoolAddress,
+  getPoolAddressError,
 } from './utils';
+
 
 const VALID_PUBKEYS = [
   '9awtMD5KQgvRUh2yFbjVeT7b6hjipWcAsQHd6wEhgtDT9soosna', // Braiins
@@ -175,6 +178,65 @@ test('getIdentifierError: returns a not-allowed-characters message for a quote',
 
 test('getIdentifierError: returns a not-allowed-characters message for a backslash', () => {
   assert.match(getIdentifierError('mi\\ner') ?? '', /not allowed|invalid|characters/i);
+});
+
+test('isValidPoolAddress: accepts a standard domain name', () => {
+  assert.equal(isValidPoolAddress('pool.braiins.com'), true);
+  assert.equal(isValidPoolAddress('stratum.slushpool.com'), true);
+});
+
+test('isValidPoolAddress: accepts an IPv4 address', () => {
+  assert.equal(isValidPoolAddress('192.168.1.100'), true);
+  assert.equal(isValidPoolAddress('127.0.0.1'), true);
+});
+
+test('isValidPoolAddress: accepts localhost', () => {
+  assert.equal(isValidPoolAddress('localhost'), true);
+});
+
+test('isValidPoolAddress: accepts an IPv6 address', () => {
+  assert.equal(isValidPoolAddress('::1'), true);
+});
+
+test('isValidPoolAddress: rejects an address with a protocol prefix', () => {
+  assert.equal(isValidPoolAddress('stratum2+tcp://pool.braiins.com'), false);
+  assert.equal(isValidPoolAddress('http://localhost'), false);
+});
+
+test('isValidPoolAddress: rejects an address with internal spaces', () => {
+  assert.equal(isValidPoolAddress('pool.braiins .com'), false);
+});
+
+test('isValidPoolAddress: accepts an address with leading/trailing spaces (normalizes internally)', () => {
+  assert.equal(isValidPoolAddress(' pool.braiins.com '), true);
+});
+
+test('isValidPoolAddress: rejects an address with commas', () => {
+  assert.equal(isValidPoolAddress('google,1231com'), false);
+});
+
+test('isValidPoolAddress: rejects an address with an @ symbol', () => {
+  assert.equal(isValidPoolAddress('google@ASDcom'), false);
+});
+
+test('getPoolAddressError: returns missing error for empty input', () => {
+  assert.match(getPoolAddressError('') ?? '', /required/i);
+});
+
+test('getPoolAddressError: returns null for a valid address', () => {
+  assert.equal(getPoolAddressError('pool.braiins.com'), null);
+});
+
+test('getPoolAddressError: returns protocol error message', () => {
+  assert.match(getPoolAddressError('stratum+tcp://pool.com') ?? '', /protocol/i);
+});
+
+test('getPoolAddressError: returns space error message', () => {
+  assert.match(getPoolAddressError('pool .com') ?? '', /space/i);
+});
+
+test('getPoolAddressError: returns invalid character message for commas or @', () => {
+  assert.match(getPoolAddressError('google,1231@ASDcom') ?? '', /invalid character/i);
 });
 
 test('isValidPoolAuthorityPubkey: rejects a checksum-valid base58check blob of wrong decoded length', () => {

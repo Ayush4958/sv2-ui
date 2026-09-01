@@ -1,4 +1,4 @@
-import { isTomlSafeIdentifier, isValidPoolAuthorityPubkey } from '@sv2-ui/shared';
+import { isTomlSafeIdentifier, isValidPoolAddress, isValidPoolAuthorityPubkey } from '@sv2-ui/shared';
 import type { PoolConfig } from './types.js';
 
 const MAX_POOL_NAME_LENGTH = 128;
@@ -17,8 +17,8 @@ export function getPoolConfigError(pool: PoolConfig, label: string): string | nu
   if (typeof pool.name !== 'string' || pool.name.length === 0 || pool.name.length > MAX_POOL_NAME_LENGTH) {
     return `${label} name is required and must be at most ${MAX_POOL_NAME_LENGTH} characters`;
   }
-  if (!isSafeBoundedString(pool.address, MAX_POOL_ADDRESS_LENGTH)) {
-    return `${label} address is required and cannot contain quotes, backslashes, control characters, or surrounding whitespace`;
+  if (!isSafeBoundedString(pool.address, MAX_POOL_ADDRESS_LENGTH) || !isValidPoolAddress(pool.address)) {
+    return `${label} address is required and cannot contain quotes, backslashes, control characters, or surrounding whitespace, and must be a valid IP or FQDN`;
   }
   if (!Number.isInteger(pool.port) || pool.port <= 0 || pool.port > 65535) {
     return `${label} port must be between 1 and 65535`;

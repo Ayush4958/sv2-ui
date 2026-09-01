@@ -1,15 +1,28 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { isValidPoolAuthorityPubkey } from '@sv2-ui/shared';
+import { 
+  getBitcoinAddressError,
+  getBitcoinAddressPlaceholder,
+  getIdentifierError,
+  isTomlSafeIdentifier,
+  isValidBitcoinAddress,
+  isValidPoolAddress,
+  getPoolAddressError,
+  isValidPoolAuthorityPubkey,
+  stripWrappingQuotes
+} from '@sv2-ui/shared';
+
 export {
   getBitcoinAddressError,
   getBitcoinAddressPlaceholder,
   getIdentifierError,
   isTomlSafeIdentifier,
   isValidBitcoinAddress,
+  isValidPoolAddress,
+  getPoolAddressError,
   isValidPoolAuthorityPubkey,
   stripWrappingQuotes,
-} from '@sv2-ui/shared';
+};
 
 /**
  * Combines class names with Tailwind merge support.
@@ -23,12 +36,12 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatHashrate(hashrate: number | null): string {
   if (hashrate === null || hashrate === 0) return '0 H/s';
-  
+
   const units = ['H/s', 'KH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s', 'EH/s'];
   const k = 1000;
   const i = Math.floor(Math.log(hashrate) / Math.log(k));
   const index = Math.min(i, units.length - 1);
-  
+
   return `${(hashrate / Math.pow(k, index)).toFixed(2)} ${units[index]}`;
 }
 
@@ -50,11 +63,11 @@ export function formatDifficulty(diff: number): string {
  */
 export function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
-  
+
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+
   if (days > 0) {
     return `${days}d ${hours}h ${minutes}m`;
   }

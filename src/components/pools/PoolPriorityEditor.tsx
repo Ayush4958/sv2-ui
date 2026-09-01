@@ -12,7 +12,7 @@ import {
   type KnownPool,
 } from '@/lib/pools';
 import { withCompatiblePoolIdentity } from '@/lib/miningIdentity';
-import { getPoolAuthorityPubkeyError, stripWrappingQuotes } from '@/lib/utils';
+import { getPoolAuthorityPubkeyError, getPoolAddressError, stripWrappingQuotes } from '@/lib/utils';
 
 interface PoolPriorityEditorProps {
   presets: KnownPool[];
@@ -298,14 +298,25 @@ function CustomPoolFields({
   isJdMode: boolean;
   onChange: (pool: PoolConfig) => void;
 }) {
+  const [isAddressTouched, setIsAddressTouched] = useState(false);
+
   const updateField = (field: keyof PoolConfig, value: string | number) => {
-    const normalized =
-      field === 'authority_public_key' && typeof value === 'string'
-        ? stripWrappingQuotes(value)
-        : value;
+    let normalized = value;
+    if (typeof value === 'string') {
+      if (field === 'authority_public_key') {
+        normalized = stripWrappingQuotes(value);
+      } else if (field === 'address') {
+        normalized = value.trim();
+        setIsAddressTouched(true);
+      }
+    }
     onChange({ ...pool, [field]: normalized });
   };
   const pubkeyError = getPoolAuthorityPubkeyError(pool.authority_public_key);
+  
+  const rawAddressError = getPoolAddressError(pool.address);
+  const showAddressError = isAddressTouched || pool.address !== '';
+  const addressError = showAddressError ? rawAddressError : null;
 
   return (
     <div className="border-t border-border bg-muted/20 p-3">
@@ -323,11 +334,15 @@ function CustomPoolFields({
             type="text"
             value={pool.address}
             onChange={(event) => updateField('address', event.target.value)}
+            onBlur={() => setIsAddressTouched(true)}
             placeholder="pool.example.com"
             aria-required="true"
             autoComplete="off"
-            className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-all focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15"
+            className={`h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-primary/15 ${
+              addressError ? 'border-destructive focus-visible:border-destructive' : 'border-input focus-visible:border-primary'
+            }`}
           />
+          <FieldError message={addressError} />
         </div>
 
         <div>
