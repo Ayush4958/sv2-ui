@@ -2,6 +2,8 @@ import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
 import bs58check from 'bs58check';
 import type { BitcoinNetwork } from './types.js';
+import isIP from 'validator/lib/isIP.js';
+import isFQDN from 'validator/lib/isFQDN.js';
 
 // Required by bitcoinjs-lib for validating taproot addresses.
 bitcoin.initEccLib(ecc);
@@ -58,6 +60,29 @@ export function getIdentifierError(value: string): string | null {
     return 'Contains characters that are not allowed (quotes, backslashes, control characters)';
   }
   return null;
+}
+
+export function isValidPoolAddress(v: string): boolean {
+  if (!v) return false;
+  
+  const normalized = v.trim();
+  if (normalized.includes('://')) return false;
+  if (normalized.includes('@')) return false;
+  if (normalized.includes(',')) return false;
+  if (/\s/.test(normalized)) return false;
+
+  return isIP(normalized) || isFQDN(normalized, { require_tld: false });
+}
+
+export function getPoolAddressError(v: string): string | null {
+  if (!v) return 'Address is required';
+  
+  const normalized = v.trim();
+  if (normalized.includes('://')) return 'Address should not include protocol prefix (e.g., stratum2+tcp://)';
+  if (/\s/.test(normalized)) return 'Address cannot contain spaces';
+  if (normalized.includes('@') || normalized.includes(',')) return 'Address contains invalid characters';
+  
+  return isValidPoolAddress(v) ? null : 'Invalid address format';
 }
 
 // Pubkeys in pool docs / Discord are almost always shown wrapped in quotes,
