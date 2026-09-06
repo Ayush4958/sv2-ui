@@ -723,14 +723,13 @@ async function pullImage(imageName: string): Promise<void> {
 async function removeContainer(name: string): Promise<void> {
   try {
     const container = docker.getContainer(name);
-    const info = await container.inspect();
-    if (info.State.Running) {
-      await container.stop();
-    }
-    await container.remove();
+    await container.remove({ force: true });
     console.log(`Removed container ${name}`);
-  } catch {
-    // Container doesn't exist, that's fine
+  } catch (error: any) {
+    if (error.statusCode !== 404) {
+      console.error(`Failed to remove container ${name}:`, error.message);
+      throw error;
+    }
   }
 }
 
