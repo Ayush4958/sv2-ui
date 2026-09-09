@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { useLocation } from 'wouter';
+import { Link, useLocation } from 'wouter';
+import { HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FieldError } from '@/components/ui/field-error';
@@ -29,6 +30,18 @@ function AuthCard({
           <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent>{children}</CardContent>
+        <div className="flex justify-center pb-2">
+          <Link href="/faq">
+            <button
+              type="button"
+              aria-label="Support & FAQ"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors duration-150"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+              Support & FAQ
+            </button>
+          </Link>
+        </div>
       </Card>
     </div>
   );
