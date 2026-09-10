@@ -63,6 +63,9 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+app.set('case sensitive routing', true);
+
 // WARNING: Umbrel's app_proxy (and any reverse proxy) terminates the client connection;
 // trust its forwarding headers so cookie Secure flags are decided correctly.
 app.set('trust proxy', true);
