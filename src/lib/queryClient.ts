@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
+import { AuthError } from '@/lib/auth-fetch';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -7,8 +8,11 @@ export const queryClient = new QueryClient({
       staleTime: 1000, // 1 second
       // Cache time - how long to keep data in cache after it's no longer being used
       gcTime: 5 * 60 * 1000, // 5 minutes
-      // Retry failed requests
-      retry: 3,
+      // Retry failed requests, but not on 401 (session expired)
+      retry: (failureCount, error) => {
+        if (error instanceof AuthError) return false;
+        return failureCount < 3;
+      },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
       // Refetch on window focus for fresh data
       refetchOnWindowFocus: true,

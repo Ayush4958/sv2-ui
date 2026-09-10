@@ -110,7 +110,7 @@ function CreatePasswordForm({
   return (
     <AuthCard
       title="Create an admin password"
-      description="This password protects your mining configuration from anyone else who can reach this device."
+      description="This password protects your mining setup. Your configuration is preserved across updates and restarts."
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -144,7 +144,7 @@ function CreatePasswordForm({
         </Button>
 
         <p className="text-xs text-muted-foreground">
-          Store it somewhere safe. Recovering your account requires the recovery key shown on the next screen. If you lose it, there is nothing we can do to recover your configuration, and you will need to reinstall the application.
+          Store it somewhere safe. Recovering your account requires the recovery key shown on the next screen. If you lose it, you can still recover access by deleting the credential file and creating a new password — your mining configuration will be kept.
         </p>
       </form>
     </AuthCard>

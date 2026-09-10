@@ -39,12 +39,21 @@ can reach the device's web interface.
 - On first launch, sv2-ui asks you to **create an admin password**. It also
   generates a one-time **recovery key** — save it somewhere safe.
 - Sessions are kept in memory and last **12 hours**; they are cleared on server
-  restart, at which point you simply log in again.
+  restart, at which point you simply log in again. This means sv2-ui updates or
+  Umbrel reboots will log everyone out — if the dashboard is left open on a
+  screen, it will show the login form on the next request.
 - **Forgot the password?** On the unlock screen, choose **Forgot password?** and
   enter your recovery key. This resets the password **while keeping your mining
   configuration**. You then choose a new
   password and get a fresh recovery key. You can also (re)generate a recovery key
   any time from **Settings > Security** when signed in.
+- **Lost your recovery key?** Delete the credential file and reload the app.
+  You'll be prompted to create a new password; your mining configuration is
+  kept. The file location depends on your setup:
+  - **Docker:** `docker exec sv2-ui rm -f /app/data/config/credential.json`
+  - **Umbrel:** Settings > Advanced > Terminal > select the Stratum V2 UI app >
+    `rm -f /app/data/config/credential.json`
+  - **Dev:** delete `data/config/credential.json` from the project root
 
 ### macOS (Docker Desktop)
 

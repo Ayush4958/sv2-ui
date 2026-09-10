@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { authFetch, AuthError } from '@/lib/auth-fetch';
 
 export interface SetupStatus {
   configured: boolean;
@@ -40,7 +41,7 @@ async function fetchSetupStatus(): Promise<SetupStatus | null> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1500);
 
-    const response = await fetch('/api/status', {
+    const response = await authFetch('/api/status', {
       signal: controller.signal,
       credentials: 'same-origin',
     });
@@ -57,7 +58,7 @@ async function fetchSetupStatus(): Promise<SetupStatus | null> {
 
     return response.json();
   } catch (error) {
-    if (error instanceof UnauthenticatedError) throw error;
+    if (error instanceof UnauthenticatedError || error instanceof AuthError) throw error;
     // Backend not available - standalone mode
     return null;
   }

@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { onAuthExpired } from '@/lib/auth-events';
 
 export interface AuthState {
   passwordSet: boolean;
@@ -50,6 +52,15 @@ export function useAuth() {
     staleTime: 5000,
     retry: false,
   });
+
+  // When any protected endpoint returns 401, immediately re-check auth state
+  // so LoginGate can transition to the login form without waiting for the
+  // next scheduled refetch.
+  useEffect(() => {
+    return onAuthExpired(() => {
+      queryClient.refetchQueries({ queryKey: AUTH_QUERY_KEY });
+    });
+  }, [queryClient]);
 
   const invalidate = () => {
     // A session change invalidates every cached view of server state.

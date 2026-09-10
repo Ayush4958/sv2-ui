@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
+import { authFetch, AuthError } from '@/lib/auth-fetch';
 import type { ContainerLogsResponse } from '@/types/log-diagnostics';
 
 async function fetchContainerLogs(): Promise<ContainerLogsResponse | null> {
   try {
-    const response = await fetch('/api/logs/raw', {
+    const response = await authFetch('/api/logs/raw', {
       signal: AbortSignal.timeout(3000),
     });
     if (!response.ok) return null;
     return response.json() as Promise<ContainerLogsResponse>;
-  } catch {
+  } catch (error) {
+    if (error instanceof AuthError) throw error;
     return null;
   }
 }
