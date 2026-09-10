@@ -621,7 +621,10 @@ export function ConfigurationTab() {
                       <div>
                         <h3 className="text-sm font-semibold">Mining identity</h3>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Set the primary {identityLabel.toLowerCase()}. Fallback pools inherit it by default.
+                          Set the primary {identityLabel.toLowerCase()}.{' '}
+                          {activeMiningMode === 'solo'
+                            ? 'Fallback pools inherit it by default.'
+                            : 'Each fallback pool needs its own username.'}
                         </p>
                       </div>
 
@@ -651,7 +654,10 @@ export function ConfigurationTab() {
                           expanded={showFallbackIdentityFields || fallbackIdentityBlocked}
                           hasBlockingError={fallbackIdentityBlocked}
                           onToggle={() => setShowFallbackIdentityFields((current) => !current)}
-                          onChange={(index, nextPool) => updateEditPoolIdentity(index + 1, nextPool)}
+                          onChange={(index, nextPool) => {
+                            setShowFallbackIdentityFields(true);
+                            updateEditPoolIdentity(index + 1, nextPool);
+                          }}
                           onFieldBlockingError={(index, error) => {
                             setEditFallbackIdentityErrors((current) => ({ ...current, [index + 1]: error }));
                           }}
