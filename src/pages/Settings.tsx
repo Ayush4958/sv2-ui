@@ -10,6 +10,8 @@ import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useContainerLogs } from '@/hooks/useContainerLogs';
 import { ContainerLogsPanel } from '@/components/data/ContainerLogsPanel';
 import { useAuth } from '@/hooks/useAuth';
+import { PasswordInput } from '@/components/ui/password-input';
+import { FieldError } from '@/components/ui/field-error';
 import {
   CheckCircle2,
   RotateCcw,
@@ -26,12 +28,48 @@ export function Settings() {
   const { status: connectionStatus, statusLabel: connectionLabel, poolName, activePoolAddress, activePoolPort, activePoolAuthorityPublicKey, uptime } = useConnectionStatus();
   const { mode } = useSetupStatus();
   const isJdMode = mode === 'jd';
-  const { recoveryKeySet, regenerateRecoveryKey } = useAuth();
+  const { recoveryKeySet, regenerateRecoveryKey, changePassword } = useAuth();
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
 
   const handleGenerateKey = async () => {
     const key = await regenerateRecoveryKey.mutateAsync();
     setRevealedKey(key);
+  };
+
+  const handleChangePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(false);
+
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+
+    changePassword.mutate(
+      { currentPassword, newPassword },
+      {
+        onSuccess: () => {
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+          setPasswordSuccess(true);
+          setTimeout(() => setPasswordSuccess(false), 3000);
+        },
+        onError: (error) => {
+          setPasswordError(error.message);
+        },
+      },
+    );
   };
   const [activeTab, setActiveTab] = useState('configuration');
   const { data: rawLogs, isLoading: logsLoading } = useContainerLogs(activeTab === 'logs');
@@ -217,6 +255,62 @@ export function Settings() {
 
           <TabsContent value="security">
             <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
+              <Card className="glass-card shadow-md">
+                <CardHeader>
+                  <CardTitle>Change password</CardTitle>
+                  <CardDescription>
+                    Update the admin password used to access the dashboard.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleChangePassword} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="current-password">Current password</Label>
+                      <PasswordInput
+                        id="current-password"
+                        autoComplete="current-password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-password">New password</Label>
+                      <PasswordInput
+                        id="new-password"
+                        autoComplete="new-password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-new-password">Confirm new password</Label>
+                      <PasswordInput
+                        id="confirm-new-password"
+                        autoComplete="new-password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                      />
+                    </div>
+
+                    <FieldError message={passwordError} />
+
+                    {passwordSuccess && (
+                      <p className="text-sm text-green-600 dark:text-green-400">
+                        Password updated successfully.
+                      </p>
+                    )}
+
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={changePassword.isPending || !currentPassword || !newPassword || !confirmPassword}
+                    >
+                      {changePassword.isPending ? 'Updating...' : 'Update password'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
               <Card className="glass-card shadow-md">
                 <CardHeader>
                   <CardTitle>Account recovery</CardTitle>

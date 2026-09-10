@@ -109,6 +109,22 @@ export function useAuth() {
     },
   });
 
+  const changePassword = useMutation({
+    mutationFn: async ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) => {
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string };
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error || `Request failed (${response.status})`);
+      }
+      invalidate();
+    },
+  });
+
   const regenerateRecoveryKey = useMutation({
     mutationFn: async () => {
       const response = await fetch('/api/auth/recovery-key/regenerate', {
@@ -135,6 +151,7 @@ export function useAuth() {
     createPassword,
     logout,
     recover,
+    changePassword,
     regenerateRecoveryKey,
   };
 }

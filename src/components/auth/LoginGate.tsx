@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FieldError } from '@/components/ui/field-error';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { BrandSplash } from '@/components/auth/BrandSplash';
 import { CopyableValue } from '@/components/ui/copyable-value';
@@ -115,9 +116,8 @@ function CreatePasswordForm({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <Label htmlFor="new-password">Password</Label>
-          <Input
+          <PasswordInput
             id="new-password"
-            type="password"
             autoComplete="new-password"
             autoFocus
             className="mt-1.5"
@@ -127,9 +127,8 @@ function CreatePasswordForm({
         </div>
         <div>
           <Label htmlFor="confirm-password">Confirm password</Label>
-          <Input
+          <PasswordInput
             id="confirm-password"
-            type="password"
             autoComplete="new-password"
             className="mt-1.5"
             value={confirmation}
@@ -277,9 +276,8 @@ function LoginForm({ recoveryKeySet }: { recoveryKeySet: boolean }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="password">Password</Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
               autoFocus
               className="mt-1.5"

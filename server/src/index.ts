@@ -442,6 +442,52 @@ app.post('/api/auth/recovery-key/regenerate', async (_req, res) => {
 });
 
 /**
+ * POST /api/auth/change-password - Change the admin password (authenticated).
+ * Requires the current password and a new password that meets the minimum
+ * length requirement. The recovery key is preserved.
+ */
+app.post('/api/auth/change-password', async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body as {
+      currentPassword?: string;
+      newPassword?: string;
+    };
+
+    const credential = await loadCredential(CREDENTIAL_FILE);
+    if (!credential) {
+      return res.status(409).json({ error: 'No password has been set yet.' });
+    }
+
+    if (typeof currentPassword !== 'string' || !(await verifyPassword(currentPassword, credential))) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    if (typeof newPassword !== 'string') {
+      return res.status(400).json({ error: 'A new password is required.' });
+    }
+
+    const validationError = getPasswordValidationError(newPassword);
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const updatedCredential = await hashPassword(newPassword);
+    await saveCredential(CREDENTIAL_FILE, {
+      ...updatedCredential,
+      recoveryKey: credential.recoveryKey,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    if (error instanceof CredentialError) {
+      return res.status(500).json({ error: 'Stored credential could not be read.' });
+    }
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+/**
  * GET /api/health - Health check
  */
 app.get('/api/health', async (_req, res) => {
