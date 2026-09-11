@@ -9,11 +9,15 @@ import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useSetupStatus } from '@/hooks/useSetupStatus';
 import { useContainerLogs } from '@/hooks/useContainerLogs';
 import { ContainerLogsPanel } from '@/components/data/ContainerLogsPanel';
+import { useAuth } from '@/hooks/useAuth';
+import { PasswordInput } from '@/components/ui/password-input';
+import { FieldError } from '@/components/ui/field-error';
 import {
   CheckCircle2,
   RotateCcw,
   Upload,
 } from 'lucide-react';
+import { CopyableValue } from '@/components/ui/copyable-value';
 import { ConfigurationTab } from '@/components/settings/ConfigurationTab';
 
 /**
@@ -24,6 +28,49 @@ export function Settings() {
   const { status: connectionStatus, statusLabel: connectionLabel, poolName, activePoolAddress, activePoolPort, activePoolAuthorityPublicKey, uptime } = useConnectionStatus();
   const { mode } = useSetupStatus();
   const isJdMode = mode === 'jd';
+  const { recoveryKeySet, regenerateRecoveryKey, changePassword } = useAuth();
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+
+  const handleGenerateKey = async () => {
+    const key = await regenerateRecoveryKey.mutateAsync();
+    setRevealedKey(key);
+  };
+
+  const handleChangePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(false);
+
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+
+    changePassword.mutate(
+      { currentPassword, newPassword },
+      {
+        onSuccess: () => {
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+          setPasswordSuccess(true);
+          setTimeout(() => setPasswordSuccess(false), 3000);
+        },
+        onError: (error) => {
+          setPasswordError(error.message);
+        },
+      },
+    );
+  };
   const [activeTab, setActiveTab] = useState('configuration');
   const { data: rawLogs, isLoading: logsLoading } = useContainerLogs(activeTab === 'logs');
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -88,10 +135,11 @@ export function Settings() {
         </div>
 
         <Tabs defaultValue="configuration" value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-[450px]">
+          <TabsList className="grid w-full grid-cols-4 lg:w-[600px]">
             <TabsTrigger value="configuration">Configuration</TabsTrigger>
             <TabsTrigger value="logs">Logs</TabsTrigger>
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
+            <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
           <TabsContent value="configuration">
@@ -200,6 +248,126 @@ export function Settings() {
                     </span>
                   </div>
 
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="security">
+            <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
+              <Card className="glass-card shadow-md">
+                <CardHeader>
+                  <CardTitle>Change password</CardTitle>
+                  <CardDescription>
+                    Update the admin password used to access the dashboard.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleChangePassword} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="current-password">Current password</Label>
+                      <PasswordInput
+                        id="current-password"
+                        autoComplete="current-password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-password">New password</Label>
+                      <PasswordInput
+                        id="new-password"
+                        autoComplete="new-password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-new-password">Confirm new password</Label>
+                      <PasswordInput
+                        id="confirm-new-password"
+                        autoComplete="new-password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                      />
+                    </div>
+
+                    <FieldError message={passwordError} />
+
+                    {passwordSuccess && (
+                      <p className="text-sm text-green-600 dark:text-green-400">
+                        Password updated successfully.
+                      </p>
+                    )}
+
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={changePassword.isPending || !currentPassword || !newPassword || !confirmPassword}
+                    >
+                      {changePassword.isPending ? 'Updating...' : 'Update password'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-card shadow-md">
+                <CardHeader>
+                  <CardTitle>Account recovery</CardTitle>
+                  <CardDescription>
+                    A recovery key lets you reset a forgotten password without
+                    losing your mining configuration. Store it somewhere safe.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {revealedKey ? (
+                    <div className="space-y-3">
+                      <CopyableValue value={revealedKey} />
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRevealedKey(null)}
+                        >
+                          Done
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Anyone with this key can reset your password. The previous
+                        key (if any) is now invalid.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        {recoveryKeySet
+                          ? 'A recovery key is set. Generate a new one if you need a replacement.'
+                          : 'No recovery key is set yet.'}
+                      </p>
+                      <Button
+                        size="sm"
+                        onClick={handleGenerateKey}
+                        disabled={regenerateRecoveryKey.isPending}
+                      >
+                        {regenerateRecoveryKey.isPending
+                          ? 'Generating...'
+                          : recoveryKeySet
+                            ? 'Generate new recovery key'
+                            : 'Create recovery key'}
+                      </Button>
+                      {recoveryKeySet && (
+                        <p className="text-xs text-muted-foreground">
+                          Generating a new key invalidates the one you saved before.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {regenerateRecoveryKey.error && (
+                    <p className="text-xs text-destructive" role="alert">
+                      {regenerateRecoveryKey.error.message}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>

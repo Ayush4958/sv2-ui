@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
+import { authFetch, AuthError } from '@/lib/auth-fetch';
 import type { LogDiagnosticsResponse } from '@/types/log-diagnostics';
 
 async function fetchLogDiagnostics(): Promise<LogDiagnosticsResponse | null> {
   try {
-    const response = await fetch('/api/logs/diagnostics', {
+    const response = await authFetch('/api/logs/diagnostics', {
       signal: AbortSignal.timeout(2500),
     });
 
@@ -12,7 +13,8 @@ async function fetchLogDiagnostics(): Promise<LogDiagnosticsResponse | null> {
     }
 
     return response.json();
-  } catch {
+  } catch (error) {
+    if (error instanceof AuthError) throw error;
     return null;
   }
 }

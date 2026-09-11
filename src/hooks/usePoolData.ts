@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { authFetch } from '@/lib/auth-fetch';
 import type {
   GlobalInfo,
   ServerChannelsResponse,
@@ -70,7 +71,7 @@ function getEndpointsCached() {
  * Fetch data from an endpoint with timeout.
  */
 async function fetchWithTimeout<T>(url: string, timeoutMs = 5000): Promise<T> {
-  const response = await fetch(url, {
+  const response = await authFetch(url, {
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
@@ -212,7 +213,7 @@ export function useSv1ClientsData(offset = 0, limit = 25, enabled = true) {
   return useQuery({
     queryKey: ['sv1-clients', offset, limit],
     queryFn: async () => {
-      const response = await fetch(
+      const response = await authFetch(
         `${endpoints.translator.base}/sv1/clients?offset=${offset}&limit=${limit}`,
         { signal: AbortSignal.timeout(5000) }
       );
@@ -251,7 +252,7 @@ export function useTranslatorHealth() {
   return useQuery({
     queryKey: ['translator-health'],
     queryFn: async () => {
-      const response = await fetch(`${endpoints.translator.base}/health`, {
+      const response = await authFetch(`${endpoints.translator.base}/health`, {
         signal: AbortSignal.timeout(2000),
       });
       return response.ok;
@@ -273,7 +274,7 @@ export function useJdcHealth(enabled = true) {
   return useQuery({
     queryKey: ['jdc-health'],
     queryFn: async () => {
-      const response = await fetch(`${endpoints.jdc.base}/health`, {
+      const response = await authFetch(`${endpoints.jdc.base}/health`, {
         signal: AbortSignal.timeout(2000),
       });
       return response.ok;
