@@ -1,5 +1,7 @@
 import type { SetupData } from './types.js';
 
+export const BITCOIN_PROBE_IMAGE = 'node:24-alpine';
+
 export const SV2_APP_IMAGES = {
   // Development branches track sv2-apps `main`. The matching release/vX
   // branch replaces all of these with its approved sv2-apps `vX` release
