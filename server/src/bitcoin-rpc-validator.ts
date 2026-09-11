@@ -1,5 +1,6 @@
 export const bitcoinRpcValidatorScript = `const http = require('http');
 const fs = require('fs');
+const MAX_RPC_RESPONSE_BYTES = 1024 * 1024;
 
 const dataDir = process.argv[1];
 const network = process.argv[2] || 'mainnet';
@@ -117,25 +118,55 @@ function makeRpcCall(method, params) {
       },
     };
 
+    let settled = false;
+    let response = null;
+
+    function finish() {
+      if (settled) return false;
+      settled = true;
+      clearTimeout(deadline);
+      return true;
+    }
+
+    function settle(err) {
+      if (!finish()) return;
+      if (response) response.destroy();
+      req.destroy();
+      reject(err);
+    }
+
+    const deadline = setTimeout(() => {
+      settle(new Error('Request timed out'));
+    }, 10000);
+
     const req = http.request(options, (res) => {
+      response = res;
       let data = '';
-      res.on('data', (chunk) => { data += chunk; });
+      let responseBytes = 0;
+      res.on('data', (chunk) => {
+        responseBytes += chunk.length;
+        if (responseBytes > MAX_RPC_RESPONSE_BYTES) {
+          settle(new Error('RPC response exceeded maximum size'));
+          return;
+        }
+        data += chunk;
+      });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
           if (parsed.error) {
-            reject(new Error(JSON.stringify(parsed.error)));
+            settle(new Error(JSON.stringify(parsed.error)));
           } else {
+            finish();
             resolve(parsed.result);
           }
         } catch (err) {
-          reject(new Error('Failed to parse response: ' + data));
+          settle(new Error('Failed to parse RPC response'));
         }
       });
     });
 
-    req.on('error', (err) => { reject(err); });
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.on('error', (err) => { settle(err); });
     req.write(postData);
     req.end();
   });
