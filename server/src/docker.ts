@@ -763,8 +763,9 @@ async function getContainerStatus(name: string): Promise<ContainerStatus | null>
       status,
       ports,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if ((error as { statusCode?: number }).statusCode === 404) return null;
+    throw normalizeDockerError(error);
   }
 }
 
