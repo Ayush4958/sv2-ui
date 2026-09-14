@@ -118,8 +118,9 @@ export function normalizeDockerError(error: unknown): Error {
   }
 
   const code = (error as NodeJS.ErrnoException).code;
-  if (code !== 'ENOENT' && code !== 'ECONNREFUSED' && code !== 'EACCES' && code !== 'EPERM') {
-    return error;
+  const isTimeout = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+  if (code !== 'ENOENT' && code !== 'ECONNREFUSED' && code !== 'EACCES' && code !== 'EPERM' && !isTimeout) {
+    return error as Error;
   }
 
   const endpoint = dockerConnection.endpoint;
@@ -141,8 +142,9 @@ export function normalizeDockerError(error: unknown): Error {
     helpText += ` Or check your DOCKER_SOCKET_PATH / DOCKER_HOST endpoint.`;
   }
 
+  const timeoutText = isTimeout ? ' (Connection timed out)' : '';
   return new Error(
-    `Docker is not reachable at ${endpoint} (${source}). ${helpText}`
+    `Docker is not reachable at ${endpoint} (${source})${timeoutText}. ${helpText}`
   );
 }
 
@@ -741,7 +743,8 @@ async function removeContainer(name: string): Promise<void> {
 async function getContainerStatus(name: string): Promise<ContainerStatus | null> {
   try {
     const container = docker.getContainer(name);
-    const info = await container.inspect();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const info = await (container.inspect({ abortSignal: AbortSignal.timeout(1000) } as any) as unknown as Promise<Docker.ContainerInspectInfo>);
 
     let status: HealthStatus = 'stopped';
     if (info.State.Running) {
@@ -764,7 +767,15 @@ async function getContainerStatus(name: string): Promise<ContainerStatus | null>
       ports,
     };
   } catch (error) {
-    if ((error as { statusCode?: number }).statusCode === 404) return null;
+    if ((error as { statusCode?: number })?.statusCode === 404) return null;
+    
+    if (error instanceof Error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ECONNREFUSED' || error.name === 'TimeoutError' || error.name === 'AbortError') {
+        refreshDockerConnection();
+      }
+    }
+    
     throw normalizeDockerError(error);
   }
 }
@@ -925,8 +936,10 @@ export async function getStackStatus(mode: 'jd' | 'no-jd' | null): Promise<{
   translator: ContainerStatus | null;
   jdc: ContainerStatus | null;
 }> {
-  const translator = await getContainerStatus(TRANSLATOR_CONTAINER);
-  const jdc = mode === 'jd' ? await getContainerStatus(JDC_CONTAINER) : null;
+  const [translator, jdc] = await Promise.all([
+    getContainerStatus(TRANSLATOR_CONTAINER),
+    mode === 'jd' ? getContainerStatus(JDC_CONTAINER) : Promise.resolve(null),
+  ]);
 
   return { translator, jdc };
 }

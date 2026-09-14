@@ -512,7 +512,7 @@ app.get('/api/status', async (_req, res) => {
     try {
       containers = await getStackStatus(state.mode);
     } catch (error) {
-      dockerError = (error as Error).message;
+      dockerError = error instanceof Error ? error.message : String(error);
     }
     const running = isStackRunning(state.mode, containers);
     const prepared = state.configured ? prepareServiceConfig(state.data) : null;
@@ -912,8 +912,17 @@ app.post('/api/reset', async (_req, res) => {
   }
 
   try {
-    // Stop containers first
-    await stopStack();
+    try {
+      // Stop containers first
+      await stopStack();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('Docker is not reachable') && !msg.includes('Permission denied when accessing Docker')) {
+        throw err;
+      }
+      console.warn('Could not stop stack during reset (Docker connection issue), proceeding with reset:', err);
+    }
+
 
     // Reset is the explicit recovery action, including for unreadable setup.
     await Promise.all([
