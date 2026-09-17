@@ -24,12 +24,6 @@ function Router() {
     }
   }, [isLoading, isOrchestrated, needsSetup, location, navigate]);
 
-  useEffect(() => {
-    if (!isLoading && isOrchestrated && !needsSetup && location === '/setup') {
-      navigate('/');
-    }
-  }, [isLoading, isOrchestrated, needsSetup, location, navigate]);
-
   if (isLoading) {
     return <BrandSplash message="Checking configuration..." />;
   }
