@@ -9,7 +9,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 
-import type { PoolConfig, SetupData, StatusResponse, SetupResponse, ContainerStatus } from './types.js';
+import type { PoolConfig, SetupData, StatusResponse, SetupResponse } from './types.js';
 import { normalizeSetupData } from './config-generator.js';
 import {
   getServiceConfigDrift,
@@ -508,7 +508,7 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/status', async (_req, res) => {
   try {
     const state = await loadState();
-    let containers: { translator: ContainerStatus | null; jdc: ContainerStatus | null } = { translator: null, jdc: null };
+    let containers: StatusResponse['containers'] = { translator: null, jdc: null };
     let dockerError: string | null = null;
     try {
       containers = await getStackStatus(state.mode);
@@ -516,7 +516,9 @@ app.get('/api/status', async (_req, res) => {
       if (error instanceof DockerConnectionError) {
         dockerError = error.message;
       } else {
-        throw error;
+        // Not a connectivity problem. Treat as not running rather than a 500,
+        // which the client reads as "no backend".
+        console.error('Status: container inspect failed:', error);
       }
     }
     const running = isStackRunning(state.mode, containers);
@@ -920,8 +922,6 @@ app.post('/api/reset', async (_req, res) => {
   try {
     // Stop containers first
     await stopStack();
-
-
     // Reset is the explicit recovery action, including for unreadable setup.
     await Promise.all([
       fs.rm(STATE_FILE, { recursive: true, force: true }),
@@ -1013,8 +1013,8 @@ async function reconcileShouldBeRunning(): Promise<void> {
       return;
     }
 
-    const prepared = prepareServiceConfig(state.data, { logFailure: !autoStartSetupReviewLogged });
     const containers = await getStackStatus(state.mode);
+    const prepared = prepareServiceConfig(state.data, { logFailure: !autoStartSetupReviewLogged });
     const running = isStackRunning(state.mode, containers);
 
     if (prepared.kind !== 'ready') {

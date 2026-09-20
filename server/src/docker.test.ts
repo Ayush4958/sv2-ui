@@ -33,6 +33,12 @@ test('normalizeDockerError passes through unrelated errors', () => {
   assert.equal(result, err);
 });
 
+test('normalizeDockerError passes through docker daemon HTTP errors', () => {
+  const err = Object.assign(new Error('Internal Server Error'), { statusCode: 500 });
+  const result = normalizeDockerError(err);
+  assert.equal(result, err);
+});
+
 test('normalizeDockerError formats ECONNREFUSED with no available sockets', (t) => {
   t.mock.method(fs, 'existsSync', () => false);
   const err = new Error('connect ECONNREFUSED');

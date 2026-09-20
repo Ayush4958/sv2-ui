@@ -142,10 +142,8 @@ export function UnifiedDashboard() {
   const [startError, setStartError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (dockerError) {
-      setStartError(null);
-    }
-  }, [dockerError]);
+    setStartError(null);
+  }, [dockerError, isRunning]);
 
   const handleStartMining = async () => {
     setIsStarting(true);
@@ -178,7 +176,7 @@ export function UnifiedDashboard() {
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           setStartError('Request timed out. The containers may still be starting.');
-        } else if (error.message.includes('fetch') || error.message.includes('Network')) {
+        } else if (error instanceof TypeError) {
           setStartError('Cannot reach the server. Make sure the backend is running.');
         } else {
           setStartError(error.message);
@@ -634,14 +632,8 @@ export function UnifiedDashboard() {
 
       {/* Docker Error Banner */}
       {!configurationIssue && configuredButStopped && dockerError && (
-        <Alert
-          variant="destructive"
-          className="items-center [&>span]:mt-0"
-          icon={<AlertTriangle className="h-4 w-4 shrink-0" />}
-        >
-          <div className="flex flex-col gap-1">
-            <span>{dockerError}</span>
-          </div>
+        <Alert variant="destructive">
+          <p>{dockerError}</p>
         </Alert>
       )}
 

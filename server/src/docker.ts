@@ -123,7 +123,7 @@ export function normalizeDockerError(error: unknown): Error {
   const code = (error as NodeJS.ErrnoException).code;
   const isTransportError = typeof code === 'string' && !('statusCode' in error);
   
-  if (!isTransportError && code !== 'EACCES' && code !== 'EPERM') {
+  if (!isTransportError) {
     return error as Error;
   }
 
@@ -133,7 +133,8 @@ export function normalizeDockerError(error: unknown): Error {
   if (code === 'EACCES' || code === 'EPERM') {
     return new DockerConnectionError(
       `Permission denied when accessing Docker at ${endpoint} (${source}). ` +
-      `Check file permissions or ensure your user is in the 'docker' group.`
+      `Check file permissions or ensure your user is in the 'docker' group.`,
+      { cause: error }
     );
   }
 
@@ -147,7 +148,7 @@ export function normalizeDockerError(error: unknown): Error {
   }
 
   return new DockerConnectionError(
-    `Docker is not reachable at ${endpoint} (${source}). ${helpText}`,
+    `Docker is not reachable at ${endpoint} (${source}) [${code}]. ${helpText}`,
     { cause: error }
   );
 }
@@ -771,9 +772,7 @@ async function getContainerStatus(name: string): Promise<ContainerStatus | null>
     };
   } catch (error) {
     if (isMissingContainerError(error)) return null;
-
-    const normalized = normalizeDockerError(error);
-    throw normalized;
+    throw normalizeDockerError(error);
   }
 }
 
@@ -936,7 +935,7 @@ export async function getStackStatus(mode: 'jd' | 'no-jd' | null): Promise<{
   refreshDockerConnection();
   const [translator, jdc] = await Promise.all([
     getContainerStatus(TRANSLATOR_CONTAINER),
-    mode === 'jd' ? getContainerStatus(JDC_CONTAINER) : Promise.resolve(null),
+    mode === 'jd' ? getContainerStatus(JDC_CONTAINER) : null,
   ]);
 
   return { translator, jdc };

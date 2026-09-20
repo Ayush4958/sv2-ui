@@ -18,7 +18,7 @@ export function isMissingContainerError(error: unknown): boolean {
     };
 
     if (
-      (candidate.statusCode === 404 && candidate.json?.message?.includes('No such container')) ||
+      (candidate.statusCode === 404 && candidate.reason === 'no such container') ||
       candidate.message?.includes('No such container') ||
       candidate.json?.message?.includes('No such container')
     ) {
