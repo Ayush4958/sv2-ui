@@ -84,6 +84,7 @@ export function UnifiedDashboard() {
     isConfigured,
     isRunning,
     autoStarting,
+    dockerError,
     miningMode,
     mode: templateMode,
     poolName: configPoolName,
@@ -140,6 +141,10 @@ export function UnifiedDashboard() {
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setStartError(null);
+  }, [dockerError, isRunning]);
+
   const handleStartMining = async () => {
     setIsStarting(true);
     setStartError(null);
@@ -171,7 +176,7 @@ export function UnifiedDashboard() {
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
           setStartError('Request timed out. The containers may still be starting.');
-        } else if (error.message.includes('fetch') || error.message.includes('Network')) {
+        } else if (error instanceof TypeError) {
           setStartError('Cannot reach the server. Make sure the backend is running.');
         } else {
           setStartError(error.message);
@@ -625,8 +630,15 @@ export function UnifiedDashboard() {
         </div>
       )}
 
+      {/* Docker Error Banner */}
+      {!configurationIssue && configuredButStopped && dockerError && (
+        <Alert variant="destructive">
+          <p>{dockerError}</p>
+        </Alert>
+      )}
+
       {/* Start Mining Banner (configured but stopped) */}
-      {!configurationIssue && configuredButStopped && showError && (
+      {!configurationIssue && configuredButStopped && !dockerError && showError && (
         <Alert
           variant="warning"
           className="items-center [&>span]:mt-0"
@@ -658,7 +670,7 @@ export function UnifiedDashboard() {
       )}
 
       {/* Connection Error Banner (not configured or unknown error) */}
-      {!configurationIssue && (startError || (showError && !configuredButStopped && diagnostics.length === 0)) && (
+      {!configurationIssue && !dockerError && (startError || (showError && !configuredButStopped && diagnostics.length === 0)) && (
         <Alert variant="destructive">
           <p>
             {startError || 'Cannot connect to pool. Make sure mining services are running.'}
