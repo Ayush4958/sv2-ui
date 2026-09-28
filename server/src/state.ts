@@ -23,8 +23,8 @@ export type SavedState = {
 };
 
 export class SavedStateError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'SavedStateError';
   }
 }
@@ -108,23 +108,31 @@ export async function loadSavedState(stateFile: string): Promise<SavedState> {
   let content: string;
   try {
     // O_NOFOLLOW refuses a symlinked state file; O_NONBLOCK keeps a planted
-    // FIFO from wedging a threadpool worker.
+    // FIFO from wedging a threadpool worker, and the fstat below rejects
+    // every non-regular file before a single byte is read.
     const handle = await fs.open(
       stateFile,
       fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW,
     );
     try {
+      const stat = await handle.stat();
+      if (!stat.isFile()) {
+        console.warn(`Saved setup at ${stateFile} is not a regular file.`);
+        throw new SavedStateError('Saved setup is not a regular file');
+      }
       content = await handle.readFile('utf8');
     } finally {
       await handle.close();
     }
   } catch (error) {
+    if (error instanceof SavedStateError) throw error;
     // Only a missing file is a fresh install. Unreadable/corrupt state is
     // preserved and surfaced to the UI so setup cannot overwrite it.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return getDefaultState();
     }
-    throw new SavedStateError('Saved setup could not be read');
+    console.warn(`Could not read saved setup at ${stateFile}:`, error);
+    throw new SavedStateError('Saved setup could not be read', { cause: error });
   }
 
   let rawState: unknown;

@@ -13,7 +13,7 @@ import {
   verifyPassword,
   verifyRecoveryKey,
 } from './auth-store.js';
-import { createFifo } from './test-support.js';
+import { assertRejectsOnPlantedFifo, createFifo } from './test-support.js';
 
 test('accepts the correct password and rejects a wrong one', async () => {
   const credential = await hashPassword('correct horse battery');
@@ -43,39 +43,37 @@ test('returns null when no credential file exists', async () => {
 test('fails fast on a FIFO at the credential path instead of blocking', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-cred-'));
   const file = path.join(dir, 'credential.json');
-  let timeoutId: NodeJS.Timeout | undefined;
 
   try {
     await createFifo(file);
-
-    const outcome = await Promise.race([
-      loadCredential(file).then(
-        (credential) => credential,
-        (error: unknown) => error,
-      ),
-      new Promise<'timed-out'>((resolve) => {
-        timeoutId = setTimeout(() => resolve('timed-out'), 250);
-        timeoutId.unref();
-      }),
-    ]);
-
-    if (outcome === 'timed-out') {
-      // A spurious timeout on a stalled runner means the reader has already
-      // closed. Open the writer with O_NONBLOCK so this branch can never
-      // wedge a libuv worker and hang the whole test process.
-      try {
-        const writer = await open(file, constants.O_WRONLY | constants.O_NONBLOCK);
-        await writer.writeFile('attacker-controlled input');
-        await writer.close();
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENXIO') throw error;
-      }
-      assert.fail('loadCredential blocked on a planted FIFO');
-    }
-
-    assert.ok(outcome instanceof CredentialError, `expected CredentialError, got ${outcome}`);
+    await assertRejectsOnPlantedFifo(file, () => loadCredential(file), CredentialError);
   } finally {
-    clearTimeout(timeoutId);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('rejects attacker data piped through a FIFO at the credential path', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-cred-'));
+  const file = path.join(dir, 'credential.json');
+
+  try {
+    await createFifo(file);
+    // O_RDWR attaches a writer without blocking or ENXIO, so the buffered
+    // bytes would be accepted as the credential if the regular-file check
+    // were missing.
+    const writer = await open(file, constants.O_RDWR);
+    try {
+      await writer.writeFile(JSON.stringify({
+        version: 1,
+        algorithm: 'scrypt',
+        salt: 'attacker-salt',
+        hash: 'attacker-hash',
+      }));
+      await assert.rejects(loadCredential(file), CredentialError);
+    } finally {
+      await writer.close();
+    }
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

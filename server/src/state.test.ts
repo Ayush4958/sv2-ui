@@ -9,7 +9,7 @@ import {
   saveSavedState,
   SavedStateError,
 } from './state.js';
-import { createFifo } from './test-support.js';
+import { assertRejectsOnPlantedFifo, createFifo } from './test-support.js';
 import type { SetupData } from './types.js';
 
 const SETUP_DATA: SetupData = {
@@ -98,39 +98,36 @@ test('never treats invalid saved setup as a fresh install', async () => {
 test('fails fast on a FIFO at the state path instead of blocking', async () => {
   const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-state-'));
   const stateFile = path.join(configDir, 'state.json');
-  let timeoutId: NodeJS.Timeout | undefined;
 
   try {
     await createFifo(stateFile);
-
-    const outcome = await Promise.race([
-      loadSavedState(stateFile).then(
-        (state) => state,
-        (error: unknown) => error,
-      ),
-      new Promise<'timed-out'>((resolve) => {
-        timeoutId = setTimeout(() => resolve('timed-out'), 250);
-        timeoutId.unref();
-      }),
-    ]);
-
-    if (outcome === 'timed-out') {
-      // A spurious timeout on a stalled runner means the reader has already
-      // closed. Open the writer with O_NONBLOCK so this branch can never
-      // wedge a libuv worker and hang the whole test process.
-      try {
-        const writer = await open(stateFile, constants.O_WRONLY | constants.O_NONBLOCK);
-        await writer.writeFile('attacker-controlled input');
-        await writer.close();
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENXIO') throw error;
-      }
-      assert.fail('loadSavedState blocked on a planted FIFO');
-    }
-
-    assert.ok(outcome instanceof SavedStateError, `expected SavedStateError, got ${outcome}`);
+    await assertRejectsOnPlantedFifo(stateFile, () => loadSavedState(stateFile), SavedStateError);
   } finally {
-    clearTimeout(timeoutId);
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('rejects attacker data piped through a FIFO at the state path', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-state-'));
+  const stateFile = path.join(configDir, 'state.json');
+
+  try {
+    await createFifo(stateFile);
+    // O_RDWR attaches a writer without blocking or ENXIO, so the buffered
+    // bytes would be accepted as saved state if the regular-file check were
+    // missing.
+    const writer = await open(stateFile, constants.O_RDWR);
+    try {
+      await writer.writeFile(JSON.stringify({
+        configured: true,
+        data: SETUP_DATA,
+        shouldBeRunning: true,
+      }));
+      await assert.rejects(loadSavedState(stateFile), SavedStateError);
+    } finally {
+      await writer.close();
+    }
+  } finally {
     await rm(configDir, { recursive: true, force: true });
   }
 });

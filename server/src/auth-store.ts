@@ -30,8 +30,8 @@ export type StoredCredential = {
 };
 
 export class CredentialError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'CredentialError';
   }
 }
@@ -102,15 +102,23 @@ export async function loadCredential(filePath: string): Promise<StoredCredential
     // Like state.ts: refuse to follow a symlinked credential file so a link
     // planted at the path cannot feed credentials from outside the volume.
     // O_NONBLOCK keeps a planted FIFO from wedging one threadpool worker per
-    // auth request, which stalls the whole server after a few requests.
+    // auth request, and the fstat below rejects every non-regular file before
+    // a single attacker-controlled byte is read.
     handle = await fs.open(
       filePath,
       fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW,
     );
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      console.warn(`Stored credential at ${filePath} is not a regular file.`);
+      throw new CredentialError('Stored credential is not a regular file.');
+    }
     raw = await handle.readFile('utf8');
   } catch (error) {
+    if (error instanceof CredentialError) throw error;
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw new CredentialError('Stored credential could not be read.');
+    console.warn(`Could not read stored credential at ${filePath}:`, error);
+    throw new CredentialError('Stored credential could not be read.', { cause: error });
   } finally {
     await handle?.close();
   }
