@@ -1089,6 +1089,14 @@ app.listen(PORT, () => {
     console.log('');
   }
 
+  // Tighten the config directory on every boot. On an upgraded install whose
+  // stack is already running and drift-free, reconcileShouldBeRunning returns
+  // before reaching any other ensureConfigDir call site, leaving an old
+  // permissive directory in place until the next mining restart.
+  void ensureConfigDir(CONFIG_DIR).catch((error) => {
+    console.warn('Could not restrict config directory permissions:', error);
+  });
+
   // Keep configured mining services running across app/system restarts.
   void reconcileShouldBeRunning();
   setInterval(() => {

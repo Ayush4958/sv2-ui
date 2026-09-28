@@ -27,7 +27,11 @@ export async function ensureConfigDir(configDir: string): Promise<void> {
     await handle.chmod(0o700);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ELOOP' || code === 'ENOTDIR') return;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return;
+    if (code === 'ELOOP') {
+      console.warn(`Config directory at ${configDir} is a symlink; skipping permission hardening.`);
+      return;
+    }
     if (code === 'EPERM' || code === 'EACCES') {
       console.warn(`Could not restrict config directory permissions at ${configDir}: ${code}`);
       return;
