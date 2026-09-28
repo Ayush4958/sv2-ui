@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { chmod, constants, lstat, mkdtemp, open, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { promisify } from 'node:util';
 import { JDC_AUTHORITY_PUBLIC_KEY } from '@sv2-ui/shared';
 import {
   getServiceConfigDrift,
@@ -13,6 +11,7 @@ import {
   prepareServiceConfig,
   reconcileServiceConfigs,
 } from './service-config.js';
+import { createFifo, raceFifoTimeout } from './test-support.js';
 import type { SetupData } from './types.js';
 
 const JD_DATA: SetupData = {
@@ -100,6 +99,23 @@ test('migrates an existing matching managed file to the 0o600 mode', async () =>
     assert.equal(prepared.kind, 'ready');
     if (prepared.kind !== 'ready') assert.fail('Expected a ready configuration');
     assert.deepEqual(await getServiceConfigDrift(prepared.files, configDir), []);
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('leaves a deliberately restrictive managed file mode alone', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
+  const managedPath = path.join(configDir, 'translator.toml');
+
+  try {
+    await reconcileServiceConfigs(JD_DATA, configDir);
+    // An operator may lock a generated file down further on purpose; the
+    // reconcile tightens group/other access but never widens it.
+    await chmod(managedPath, 0o0400);
+
+    assert.deepEqual(await reconcileServiceConfigs(JD_DATA, configDir), []);
+    assert.equal((await stat(managedPath)).mode & 0o777, 0o0400);
   } finally {
     await rm(configDir, { recursive: true, force: true });
   }
@@ -275,41 +291,26 @@ test('detects and removes an obsolete generated JDC config when switching to no-
 test('does not block while inspecting a FIFO at a managed config path', async () => {
   const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
   const managedPath = path.join(configDir, 'translator.toml');
-  let timeoutId: NodeJS.Timeout | undefined;
 
   try {
-    await promisify(execFile)('mkfifo', ['-m', '666', managedPath]);
+    await createFifo(managedPath);
 
-    const timedOut = new Promise<'timed-out'>((resolve) => {
-      timeoutId = setTimeout(() => resolve('timed-out'), 250);
-      timeoutId.unref();
-    });
-    const outcome = await Promise.race([
+    const outcome = await raceFifoTimeout(managedPath, () =>
       getServiceConfigDrift([{
         filename: 'translator.toml',
         contents: 'trusted configuration',
       }], configDir),
-      timedOut,
-    ]);
+    );
 
-    if (outcome === 'timed-out') {
-      // A spurious timeout on a stalled runner means the reader has already
-      // closed. Open the writer with O_NONBLOCK so this branch can never wedge
-      // a libuv worker and hang the whole test process; ENXIO means there is
-      // no blocked reader to release.
-      try {
-        const writer = await open(managedPath, constants.O_WRONLY | constants.O_NONBLOCK);
-        await writer.writeFile('attacker-controlled input');
-        await writer.close();
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENXIO') throw error;
-      }
+    if (outcome.kind === 'timed-out') {
       assert.fail('drift inspection blocked while opening an attacker-created FIFO');
     }
+    if (outcome.kind === 'error') {
+      throw outcome.error;
+    }
 
-    assert.deepEqual(outcome, ['translator.toml']);
+    assert.deepEqual(outcome.value, ['translator.toml']);
   } finally {
-    clearTimeout(timeoutId);
     await rm(configDir, { recursive: true, force: true });
   }
 });
@@ -379,7 +380,7 @@ test('replaces a FIFO at a managed config path with a regular file', async () =>
   const managedPath = path.join(configDir, 'translator.toml');
 
   try {
-    await promisify(execFile)('mkfifo', ['-m', '666', managedPath]);
+    await createFifo(managedPath);
 
     const changed = await reconcileServiceConfigs(JD_DATA, configDir);
 

@@ -238,9 +238,10 @@ async function pathExists(filePath: string): Promise<boolean> {
  * Bring a managed regular file to the requested mode through a no-follow
  * descriptor, without rewriting its contents. Best-effort on races (the entry
  * may vanish or swap while re-opening) and on unprivileged EPERM: a file we
- * cannot chmod must not fail the whole reconcile.
+ * cannot chmod must not fail the whole reconcile. Returns whether the mode
+ * was actually applied, so the caller only reports files that changed.
  */
-async function tightenFileMode(filePath: string, mode: number): Promise<void> {
+async function tightenFileMode(filePath: string, mode: number): Promise<boolean> {
   let handle: fs.FileHandle | null = null;
   try {
     handle = await fs.open(
@@ -248,12 +249,13 @@ async function tightenFileMode(filePath: string, mode: number): Promise<void> {
       fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW,
     );
     await handle.chmod(mode);
+    return true;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ENXIO' || code === 'ELOOP') return;
+    if (code === 'ENOENT' || code === 'ENXIO' || code === 'ELOOP') return false;
     if (code === 'EPERM' || code === 'EACCES') {
       console.warn(`Could not restrict permissions of ${filePath}: ${code}`);
-      return;
+      return false;
     }
     throw error;
   } finally {
@@ -329,9 +331,10 @@ export async function reconcileServiceConfigFiles(
     const existing = await readExistingFile(filePath);
     if (existing && existing.contents === desiredContents) {
       // Contents match, but files written before the owner-only policy may
-      // still carry a permissive mode: tighten it in place.
-      if (existing.mode !== 0o600) {
-        await tightenFileMode(filePath, 0o600);
+      // still carry a permissive mode: tighten it in place. Only tighten when
+      // group/other still have access, so a deliberately more restrictive
+      // mode (0400) is never widened.
+      if ((existing.mode & 0o077) !== 0 && (await tightenFileMode(filePath, 0o600))) {
         changedFiles.push(filename);
       }
       continue;
