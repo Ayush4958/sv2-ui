@@ -138,3 +138,36 @@ test('Docker connection metadata never exposes URL credentials', () => {
     getDockerConnectionInfo();
   }
 });
+
+test('a malformed DOCKER_HOST does not leak credentials through the thrown error', () => {
+  const previousHost = process.env.DOCKER_HOST;
+  const previousSocketPath = process.env.DOCKER_SOCKET_PATH;
+  const password = 'docker-password-must-stay-secret';
+
+  try {
+    delete process.env.DOCKER_SOCKET_PATH;
+    process.env.DOCKER_HOST = `https://docker-user:${password}@127.0.0.1:notaport`;
+
+    let thrown: unknown;
+    try {
+      getDockerConnectionInfo();
+    } catch (error) {
+      thrown = error;
+    }
+
+    assert.ok(thrown instanceof Error, 'expected the malformed DOCKER_HOST to be rejected');
+    // The whole serialized error is checked so neither the message nor any
+    // extra property (ERR_INVALID_URL attaches the raw URL as `input`) can
+    // carry the credential.
+    assert.doesNotMatch(JSON.stringify(thrown), new RegExp(password));
+  } finally {
+    if (previousHost === undefined) delete process.env.DOCKER_HOST;
+    else process.env.DOCKER_HOST = previousHost;
+
+    if (previousSocketPath === undefined) delete process.env.DOCKER_SOCKET_PATH;
+    else process.env.DOCKER_SOCKET_PATH = previousSocketPath;
+
+    // Re-resolve the cached connection against the restored environment.
+    getDockerConnectionInfo();
+  }
+});
