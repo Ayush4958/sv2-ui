@@ -61,7 +61,14 @@ function parseDockerHost(dockerHost: string): DockerConnectionConfig {
     };
   }
 
-  const url = new URL(dockerHost);
+  let url: URL;
+  try {
+    url = new URL(dockerHost);
+  } catch {
+    // ERR_INVALID_URL carries the raw input (credentials included) on its
+    // `input` property, so the original error is never rethrown or echoed.
+    throw new Error('Invalid DOCKER_HOST: expected a parseable URL, e.g. tcp://host:2375.');
+  }
   const protocol = url.protocol === 'tcp:' ? 'http' : url.protocol.replace(':', '');
 
   if (protocol !== 'http' && protocol !== 'https' && protocol !== 'ssh') {
@@ -69,15 +76,20 @@ function parseDockerHost(dockerHost: string): DockerConnectionConfig {
   }
 
   const defaultPort = protocol === 'https' ? 2376 : 2375;
+  const port = url.port ? Number(url.port) : defaultPort;
+  // Echo the configured URL with only the password removed, so the startup
+  // log and error messages show the endpoint the operator actually set.
+  url.password = '';
+  const redacted = url.href;
 
   return {
-    endpoint: dockerHost,
+    endpoint: redacted,
     options: {
       host: url.hostname,
-      port: url.port ? Number(url.port) : defaultPort,
+      port,
       protocol,
     },
-    source: `DOCKER_HOST=${dockerHost}`,
+    source: `DOCKER_HOST=${redacted}`,
   };
 }
 

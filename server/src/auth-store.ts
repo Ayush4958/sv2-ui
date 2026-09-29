@@ -30,8 +30,8 @@ export type StoredCredential = {
 };
 
 export class CredentialError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'CredentialError';
   }
 }
@@ -97,11 +97,30 @@ export async function verifyRecoveryKey(
 
 export async function loadCredential(filePath: string): Promise<StoredCredential | null> {
   let raw: string;
+  let handle: fs.FileHandle | null = null;
   try {
-    raw = await fs.readFile(filePath, 'utf8');
+    // Like state.ts: refuse to follow a symlinked credential file so a link
+    // planted at the path cannot feed credentials from outside the volume.
+    // O_NONBLOCK keeps a planted FIFO from wedging one threadpool worker per
+    // auth request, and the fstat below rejects every non-regular file before
+    // a single attacker-controlled byte is read.
+    handle = await fs.open(
+      filePath,
+      fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW,
+    );
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      console.warn(`Stored credential at ${filePath} is not a regular file.`);
+      throw new CredentialError('Stored credential is not a regular file.');
+    }
+    raw = await handle.readFile('utf8');
   } catch (error) {
+    if (error instanceof CredentialError) throw error;
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
+    console.warn(`Could not read stored credential at ${filePath}:`, error);
+    throw new CredentialError('Stored credential could not be read.', { cause: error });
+  } finally {
+    await handle?.close();
   }
 
   let parsed: unknown;
@@ -126,6 +145,5 @@ export async function saveCredential(
   filePath: string,
   credential: StoredCredential,
 ): Promise<void> {
-  await writeFileAtomically(filePath, `${JSON.stringify(credential, null, 2)}\n`);
-  await fs.chmod(filePath, 0o600);
+  await writeFileAtomically(filePath, `${JSON.stringify(credential, null, 2)}\n`, { mode: 0o600 });
 }

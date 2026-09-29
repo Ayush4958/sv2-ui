@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 
 import type { PoolConfig, SetupData, StatusResponse, SetupResponse } from './types.js';
 import { normalizeSetupData } from './config-generator.js';
+import { ensureConfigDir } from './config-dir.js';
 import {
   getServiceConfigDrift,
   getSetupValidationError,
@@ -308,7 +309,7 @@ app.post('/api/auth/setup-password', async (req, res) => {
       return res.status(400).json({ error: validationError });
     }
 
-    await fs.mkdir(CONFIG_DIR, { recursive: true });
+    await ensureConfigDir(CONFIG_DIR);
     const recoveryKey = generateRecoveryKey();
     await saveCredential(CREDENTIAL_FILE, {
       ...(await hashPassword(password as string)),
@@ -1087,6 +1088,14 @@ app.listen(PORT, () => {
     console.log('└─────────────────────────────────────────────────────┘');
     console.log('');
   }
+
+  // Tighten the config directory on every boot. On an upgraded install whose
+  // stack is already running and drift-free, reconcileShouldBeRunning returns
+  // before reaching any other ensureConfigDir call site, leaving an old
+  // permissive directory in place until the next mining restart.
+  void ensureConfigDir(CONFIG_DIR).catch((error) => {
+    console.warn('Could not restrict config directory permissions:', error);
+  });
 
   // Keep configured mining services running across app/system restarts.
   void reconcileShouldBeRunning();

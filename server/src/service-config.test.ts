@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -10,6 +11,7 @@ import {
   prepareServiceConfig,
   reconcileServiceConfigs,
 } from './service-config.js';
+import { createFifo, raceFifoTimeout } from './test-support.js';
 import type { SetupData } from './types.js';
 
 const JD_DATA: SetupData = {
@@ -75,6 +77,45 @@ test('does not rewrite generated config files that already match', async () => {
       await getServiceConfigDrift(prepared.files, configDir),
       [],
     );
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('migrates an existing matching managed file to the 0o600 mode', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
+  const managedPath = path.join(configDir, 'translator.toml');
+
+  try {
+    await reconcileServiceConfigs(JD_DATA, configDir);
+    // Simulate a file written before the owner-only policy existed.
+    await chmod(managedPath, 0o644);
+
+    assert.deepEqual(await reconcileServiceConfigs(JD_DATA, configDir), ['translator.toml']);
+    assert.equal((await stat(managedPath)).mode & 0o777, 0o600);
+
+    // Contents are untouched, so the mode is not drift.
+    const prepared = prepareServiceConfig(JD_DATA);
+    assert.equal(prepared.kind, 'ready');
+    if (prepared.kind !== 'ready') assert.fail('Expected a ready configuration');
+    assert.deepEqual(await getServiceConfigDrift(prepared.files, configDir), []);
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('leaves a deliberately restrictive managed file mode alone', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
+  const managedPath = path.join(configDir, 'translator.toml');
+
+  try {
+    await reconcileServiceConfigs(JD_DATA, configDir);
+    // An operator may lock a generated file down further on purpose; the
+    // reconcile tightens group/other access but never widens it.
+    await chmod(managedPath, 0o0400);
+
+    assert.deepEqual(await reconcileServiceConfigs(JD_DATA, configDir), []);
+    assert.equal((await stat(managedPath)).mode & 0o777, 0o0400);
   } finally {
     await rm(configDir, { recursive: true, force: true });
   }
@@ -242,6 +283,111 @@ test('detects and removes an obsolete generated JDC config when switching to no-
     assert.deepEqual(await reconcileServiceConfigs(noJdData, configDir), ['translator.toml', 'jdc.toml']);
     await assert.rejects(readFile(path.join(configDir, 'jdc.toml'), 'utf8'), { code: 'ENOENT' });
     assert.deepEqual(await getServiceConfigDrift(prepared.files, configDir), []);
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('does not block while inspecting a FIFO at a managed config path', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
+  const managedPath = path.join(configDir, 'translator.toml');
+
+  try {
+    await createFifo(managedPath);
+
+    const outcome = await raceFifoTimeout(managedPath, () =>
+      getServiceConfigDrift([{
+        filename: 'translator.toml',
+        contents: 'trusted configuration',
+      }], configDir),
+    );
+
+    if (outcome.kind === 'timed-out') {
+      assert.fail('drift inspection blocked while opening an attacker-created FIFO');
+    }
+    if (outcome.kind === 'error') {
+      throw outcome.error;
+    }
+
+    assert.deepEqual(outcome.value, ['translator.toml']);
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('reports a symlink at a managed config path as drift even when it resolves to matching contents', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
+  const managedPath = path.join(configDir, 'translator.toml');
+
+  try {
+    await writeFile(path.join(configDir, 'linked-target'), 'trusted configuration');
+    await symlink(path.join(configDir, 'linked-target'), managedPath);
+
+    assert.deepEqual(
+      await getServiceConfigDrift([{
+        filename: 'translator.toml',
+        contents: 'trusted configuration',
+      }], configDir),
+      ['translator.toml'],
+    );
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('reports a Unix socket at a managed config path as drift without failing', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
+  const managedPath = path.join(configDir, 'translator.toml');
+  const server = net.createServer();
+
+  try {
+    await new Promise<void>((resolve) => server.listen(managedPath, resolve));
+
+    assert.deepEqual(
+      await getServiceConfigDrift([{
+        filename: 'translator.toml',
+        contents: 'trusted configuration',
+      }], configDir),
+      ['translator.toml'],
+    );
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('replaces a symlink at a managed config path with a regular file', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
+  const managedPath = path.join(configDir, 'translator.toml');
+
+  try {
+    await writeFile(path.join(configDir, 'linked-target'), 'attacker controlled');
+    await symlink(path.join(configDir, 'linked-target'), managedPath);
+
+    const changed = await reconcileServiceConfigs(JD_DATA, configDir);
+
+    const finalStat = await lstat(managedPath);
+    assert.ok(finalStat.isFile(), 'reconcile must replace the planted symlink with a regular file');
+    assert.equal(finalStat.mode & 0o777, 0o600);
+    assert.ok(changed.includes('translator.toml'));
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('replaces a FIFO at a managed config path with a regular file', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-config-'));
+  const managedPath = path.join(configDir, 'translator.toml');
+
+  try {
+    await createFifo(managedPath);
+
+    const changed = await reconcileServiceConfigs(JD_DATA, configDir);
+
+    const finalStat = await stat(managedPath);
+    assert.ok(finalStat.isFile(), 'reconcile must replace the planted FIFO with a regular file');
+    assert.equal(finalStat.mode & 0o777, 0o600);
+    assert.ok(changed.includes('translator.toml'));
   } finally {
     await rm(configDir, { recursive: true, force: true });
   }

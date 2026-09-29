@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { constants, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -9,6 +9,7 @@ import {
   saveSavedState,
   SavedStateError,
 } from './state.js';
+import { assertRejectsOnPlantedFifo, createFifo } from './test-support.js';
 import type { SetupData } from './types.js';
 
 const SETUP_DATA: SetupData = {
@@ -89,6 +90,43 @@ test('never treats invalid saved setup as a fresh install', async () => {
 
     await assert.rejects(loadSavedState(stateFile), SavedStateError);
     assert.equal(await readFile(stateFile, 'utf8'), '{not json');
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('fails fast on a FIFO at the state path instead of blocking', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-state-'));
+  const stateFile = path.join(configDir, 'state.json');
+
+  try {
+    await createFifo(stateFile);
+    await assertRejectsOnPlantedFifo(stateFile, () => loadSavedState(stateFile), SavedStateError);
+  } finally {
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test('rejects attacker data piped through a FIFO at the state path', async () => {
+  const configDir = await mkdtemp(path.join(os.tmpdir(), 'sv2-ui-state-'));
+  const stateFile = path.join(configDir, 'state.json');
+
+  try {
+    await createFifo(stateFile);
+    // O_RDWR attaches a writer without blocking or ENXIO, so the buffered
+    // bytes would be accepted as saved state if the regular-file check were
+    // missing.
+    const writer = await open(stateFile, constants.O_RDWR);
+    try {
+      await writer.writeFile(JSON.stringify({
+        configured: true,
+        data: SETUP_DATA,
+        shouldBeRunning: true,
+      }));
+      await assert.rejects(loadSavedState(stateFile), SavedStateError);
+    } finally {
+      await writer.close();
+    }
   } finally {
     await rm(configDir, { recursive: true, force: true });
   }
