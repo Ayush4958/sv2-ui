@@ -168,7 +168,7 @@ export function PoolConfigStep({ data, updateData, onNext }: PoolConfigStepProps
           Select Pools
         </h2>
         <p className="mt-3 text-sm text-muted-foreground">
-          Select one pool as primary. Select more pools or add custom pools as fallbacks, then drag selected pools to reorder priority.
+          Pick a primary pool and add more as fallbacks. Drag to change the order.
         </p>
       </div>
 

@@ -131,12 +131,8 @@ export function knownPoolToConfig(pool: KnownPool, userIdentity = ''): PoolConfi
 
 export const CUSTOM_POOL_BASE_NAME = 'Custom Pool';
 
-/**
- * Pick a display name for a newly added custom pool that does not collide with
- * any pool already in the list: "Custom Pool", then "Custom Pool 2", "Custom
- * Pool 3", ... The lowest free number is reused, so removing a custom pool and
- * adding another one does not keep growing the suffix.
- */
+// Returns "Custom Pool", then "Custom Pool 2", "Custom Pool 3", ... using the
+// lowest number not already taken.
 export function getNextCustomPoolName(pools: Pick<PoolConfig, 'name'>[]): string {
   const usedNames = new Set(pools.map((pool) => pool.name?.trim().toLowerCase()));
   if (!usedNames.has(CUSTOM_POOL_BASE_NAME.toLowerCase())) return CUSTOM_POOL_BASE_NAME;
@@ -201,13 +197,8 @@ export function getKnownPoolForConfig(pool: Pick<PoolConfig, 'address' | 'port' 
   return ALL_KNOWN_POOLS.find((knownPool) => isSameTrustedPool(pool, knownPool)) ?? null;
 }
 
-/**
- * Indexes of every pool whose endpoint (address + port) is shared with at least
- * one other pool in the list. All members of a duplicate group are flagged, so
- * the conflict stays visible on an editable custom pool even when the matching
- * entry is a preset. Pools without an address yet are ignored, which lets a
- * user add several empty custom pools and fill them in one at a time.
- */
+// Indexes of all pools that share an address and port with another pool in the
+// list. Pools without an address yet are skipped, so empty custom pools don't count.
 export function getDuplicatePoolEndpointIndexes(
   pools: Array<Pick<PoolConfig, 'address' | 'port'> | null | undefined>,
 ): Set<number> {

@@ -17,7 +17,7 @@ export function isPoolConnectionComplete(pool: PoolConfig | null | undefined): b
   );
 }
 
-/** True when two or more pools in the list point at the same address and port. */
+// True if any two pools share the same address and port.
 export function hasDuplicatePoolEndpoints(
   pools: Array<PoolConfig | null | undefined>,
 ): boolean {

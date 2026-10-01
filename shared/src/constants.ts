@@ -42,7 +42,7 @@ export const DEFAULT_DOWNSTREAM_EXTRANONCE2_SIZE = 4;
 export const MAX_DOWNSTREAM_EXTRANONCE2_SIZE = 65_535;
 export const DEFAULT_MIN_HASHRATE = 100_000_000_000_000;
 export const DEFAULT_POOL_PORT = 34254;
-// One primary pool plus up to this many fallbacks (presets and custom pools combined).
+// Max number of fallback pools, not counting the primary.
 export const MAX_FALLBACK_POOLS = 16;
 
 export function computeDefaultSocketPath(dataDir: string, network: BitcoinNetwork): string {
