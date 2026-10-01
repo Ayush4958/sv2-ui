@@ -65,15 +65,6 @@ export const SOLO_POOLS: KnownPool[] = [
     monogram: 'CK',
   },
   {
-    id: 'mkpool',
-    name: 'MKPool',
-    address: 'btc.mkpool.com',
-    port: 3340,
-    authority_public_key: '9c9aZWzETaiJyqGGUSCn8GqFgTpxs96ert4d4jGeRnvxqRqhZar',
-    description: 'MKPool',
-    logoUrl: '/mkpool-avatar-navy.svg',
-  },
-  {
     id: 'nexuspool',
     name: 'NexusPool',
     address: 'nexuspool.io',
