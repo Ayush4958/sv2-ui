@@ -41,16 +41,26 @@ export function ContainerLogsPanel({ lines, isLoading, isJdMode }: ContainerLogs
   const [pausedLines, setPausedLines] = useState<ContainerLogLine[] | null>(null);
   const isPaused = pausedLines !== null;
   const visibleLines = pausedLines ?? lines;
+  // Only a pause caused by scrolling is undone by scrolling back down;
+  // a pause from the button waits for Resume.
+  const pausedByScroll = useRef(false);
 
-  const togglePause = () => setPausedLines(isPaused ? null : lines);
+  const togglePause = () => {
+    pausedByScroll.current = false;
+    setPausedLines(isPaused ? null : lines);
+  };
 
   // Scrolling up pauses; scrolling back to the very bottom resumes.
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (!isPaused && distanceFromBottom > 40) setPausedLines(lines);
-    else if (isPaused && distanceFromBottom < 2) setPausedLines(null);
+    if (!isPaused && distanceFromBottom > 40) {
+      pausedByScroll.current = true;
+      setPausedLines(lines);
+    } else if (isPaused && pausedByScroll.current && distanceFromBottom < 2) {
+      setPausedLines(null);
+    }
   };
 
   // Follow the latest lines while live (also jumps to the end on resume).
@@ -79,7 +89,7 @@ export function ContainerLogsPanel({ lines, isLoading, isJdMode }: ContainerLogs
     }
   }, []);
 
-  if (isLoading && lines.length === 0) {
+  if (isLoading && visibleLines.length === 0) {
     return (
       <div className="h-48 flex items-center justify-center rounded-md bg-black/80 text-zinc-500 text-xs font-mono">
         Loading logs…
@@ -87,7 +97,7 @@ export function ContainerLogsPanel({ lines, isLoading, isJdMode }: ContainerLogs
     );
   }
 
-  if (lines.length === 0) {
+  if (visibleLines.length === 0) {
     return (
       <div className="h-48 flex items-center justify-center rounded-md bg-black/80 text-zinc-500 text-xs font-mono">
         No log output yet. Services may not be running.
@@ -100,10 +110,9 @@ export function ContainerLogsPanel({ lines, isLoading, isJdMode }: ContainerLogs
       <div className="flex items-center justify-end gap-1">
         <button
           onClick={togglePause}
-          aria-pressed={isPaused}
           className={cn(
             'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors hover:bg-muted/40',
-            isPaused ? 'text-yellow-400' : 'text-muted-foreground hover:text-foreground'
+            isPaused ? 'text-amber-700 dark:text-yellow-400' : 'text-muted-foreground hover:text-foreground'
           )}
           title={isPaused ? 'Resume live logs and jump to latest' : 'Pause auto-scroll'}
         >
