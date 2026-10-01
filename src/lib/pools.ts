@@ -129,9 +129,27 @@ export function knownPoolToConfig(pool: KnownPool, userIdentity = ''): PoolConfi
   };
 }
 
-export function createEmptyCustomPool(userIdentity = ''): PoolConfig {
+export const CUSTOM_POOL_BASE_NAME = 'Custom Pool';
+
+/**
+ * Pick a display name for a newly added custom pool that does not collide with
+ * any pool already in the list: "Custom Pool", then "Custom Pool 2", "Custom
+ * Pool 3", ... The lowest free number is reused, so removing a custom pool and
+ * adding another one does not keep growing the suffix.
+ */
+export function getNextCustomPoolName(pools: Pick<PoolConfig, 'name'>[]): string {
+  const usedNames = new Set(pools.map((pool) => pool.name?.trim().toLowerCase()));
+  if (!usedNames.has(CUSTOM_POOL_BASE_NAME.toLowerCase())) return CUSTOM_POOL_BASE_NAME;
+
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${CUSTOM_POOL_BASE_NAME} ${suffix}`;
+    if (!usedNames.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
+export function createEmptyCustomPool(userIdentity = '', name = CUSTOM_POOL_BASE_NAME): PoolConfig {
   return {
-    name: 'Custom Pool',
+    name,
     address: '',
     port: 3333,
     authority_public_key: '',
@@ -183,4 +201,26 @@ export function getKnownPoolForConfig(pool: Pick<PoolConfig, 'address' | 'port' 
   return ALL_KNOWN_POOLS.find((knownPool) => isSameTrustedPool(pool, knownPool)) ?? null;
 }
 
-
+/**
+ * Indexes of every pool whose endpoint (address + port) is shared with at least
+ * one other pool in the list. All members of a duplicate group are flagged, so
+ * the conflict stays visible on an editable custom pool even when the matching
+ * entry is a preset. Pools without an address yet are ignored, which lets a
+ * user add several empty custom pools and fill them in one at a time.
+ */
+export function getDuplicatePoolEndpointIndexes(
+  pools: Array<Pick<PoolConfig, 'address' | 'port'> | null | undefined>,
+): Set<number> {
+  const duplicates = new Set<number>();
+  pools.forEach((pool, index) => {
+    if (!pool?.address.trim()) return;
+    pools.forEach((other, otherIndex) => {
+      if (otherIndex <= index || !other?.address.trim()) return;
+      if (isDuplicatePoolEndpoint(pool, other)) {
+        duplicates.add(index);
+        duplicates.add(otherIndex);
+      }
+    });
+  });
+  return duplicates;
+}
