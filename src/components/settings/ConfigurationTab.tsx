@@ -3,6 +3,8 @@ import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
+import { ConnectionAlert } from '@/components/ui/connection-alert';
 import { Badge } from '@/components/ui/badge';
 import { PoolIcon } from '@/components/ui/pool-icon';
 import { HashrateInput } from '@/components/ui/hashrate-input';
@@ -77,6 +79,8 @@ export function ConfigurationTab() {
     miningMode: statusMiningMode,
     mode: statusMode,
     activePoolIndex,
+    dockerError,
+    isBackendError,
   } = useSetupStatus();
   const {
     stop,
@@ -288,10 +292,12 @@ export function ConfigurationTab() {
     });
   };
 
-  // Not using orchestration backend
   if (!isOrchestrated) {
     return (
       <div className="space-y-6 animate-in slide-in-from-left-2 duration-300">
+        {isBackendError && (
+          <ConnectionAlert isOrchestrated={isOrchestrated} className="mb-6" />
+        )}
         <Card className="border-dashed">
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">
@@ -307,10 +313,12 @@ export function ConfigurationTab() {
     );
   }
 
-  // Not configured yet
   if (!isConfigured) {
     return (
       <div className="space-y-6 animate-in slide-in-from-left-2 duration-300">
+        {isBackendError && (
+          <ConnectionAlert isOrchestrated={isOrchestrated} className="mb-6" />
+        )}
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="pt-6">
             <div className="flex gap-3">
@@ -375,6 +383,9 @@ export function ConfigurationTab() {
 
   return (
     <div className="space-y-6 animate-in slide-in-from-left-2 duration-300">
+      {isBackendError && (
+        <ConnectionAlert isOrchestrated={isOrchestrated} className="mb-6" />
+      )}
       {/* Status Banner */}
       <Card className={isRunning ? 'border-green-500/30 bg-green-500/5' : 'border-muted'}>
         <CardContent className="pt-6">
@@ -396,7 +407,7 @@ export function ConfigurationTab() {
                     variant="outline"
                     size="sm"
                     onClick={handleRestart}
-                    disabled={isStoppingOrRestarting}
+                    disabled={isStoppingOrRestarting || isBackendError}
                   >
                     {isStoppingOrRestarting ? (
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Restarting...</>
@@ -408,7 +419,7 @@ export function ConfigurationTab() {
                     variant="outline"
                     size="sm"
                     onClick={handleStop}
-                    disabled={isStoppingOrRestarting}
+                    disabled={isStoppingOrRestarting || isBackendError}
                   >
                     {isStoppingOrRestarting ? (
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Stopping...</>
@@ -421,7 +432,7 @@ export function ConfigurationTab() {
                 <Button
                   size="sm"
                   onClick={handleRestart}
-                  disabled={isStoppingOrRestarting}
+                  disabled={isStoppingOrRestarting || !!dockerError || isBackendError}
                   className="w-full sm:w-auto"
                 >
                   {isStoppingOrRestarting ? (
@@ -435,6 +446,13 @@ export function ConfigurationTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Docker Error Alert */}
+      {dockerError && (
+        <Alert variant="destructive">
+          <p>{dockerError}</p>
+        </Alert>
+      )}
 
       {/* Error Messages */}
       {(stopError || restartError || setupError) && (
