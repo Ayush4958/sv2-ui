@@ -374,7 +374,7 @@ export function ConfigurationTab() {
     : isJdMode
       ? 'Custom Templates (Job Declaration)'
       : 'Pool Templates';
-  const coinbaseAddressLabel = isSovereignSolo ? 'Block Reward Address' : 'Fallback Address';
+  const coinbaseAddressLabel = isSovereignSolo ? 'Block Reward Address' : 'Solo Fallback Address';
   const pools = getPoolsForMode(activeMiningMode, activeMode);
   const isSaving = isSettingUp;
   const editPrimaryPool = editPools?.[0] ?? null;
@@ -751,6 +751,53 @@ export function ConfigurationTab() {
             />
           )}
 
+          {/* Fallback / block reward address (JD mode) */}
+          {isJdMode && config.jdc && (
+            <ConfigRow
+              label={coinbaseAddressLabel}
+              editing={editing === 'coinbaseAddress'}
+              onEdit={startEditCoinbaseAddress}
+              onSave={saveEdit}
+              onCancel={cancelEdit}
+              isSaving={isSaving}
+              saveDisabled={!isCoinbaseAddressValid}
+              disabled={editing !== null && editing !== 'coinbaseAddress'}
+              display={
+                <p className="text-muted-foreground font-mono text-xs truncate">
+                  {config.jdc.coinbase_reward_address || 'Not set'}
+                </p>
+              }
+              editContent={
+                <div>
+                  <label htmlFor="edit-coinbase-address" className="sr-only">
+                    {coinbaseAddressLabel}
+                  </label>
+                  <input
+                    id="edit-coinbase-address"
+                    type="text"
+                    value={editCoinbaseAddress}
+                    onChange={(e) => setEditCoinbaseAddress(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && isCoinbaseAddressValid && !isSaving) saveEdit();
+                      if (e.key === 'Escape') cancelEdit();
+                    }}
+                    autoFocus
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={getBitcoinAddressPlaceholder(editNetwork)}
+                    className="w-full h-10 px-3 rounded-lg border border-input bg-background font-mono text-sm focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15 outline-none transition-all"
+                  />
+                  <FieldError message={getBitcoinAddressError(trimmedCoinbaseAddress, editNetwork)} />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {isSovereignSolo
+                      ? 'Where the full block reward is paid when your node finds a block.'
+                      : 'Used for coinbase rewards if the Job Declarator falls back to solo mining due to pool connection issues.'}
+                  </p>
+                </div>
+              }
+            />
+          )}
+
           {/* Lowest worker hashrate */}
           {config.translator && (
             <ConfigRow
@@ -889,53 +936,6 @@ export function ConfigurationTab() {
                 {config.bitcoin.socket_path}
               </p>
             </div>
-          )}
-
-          {/* Fallback / block reward address (JD mode) */}
-          {isJdMode && config.jdc && (
-            <ConfigRow
-              label={coinbaseAddressLabel}
-              editing={editing === 'coinbaseAddress'}
-              onEdit={startEditCoinbaseAddress}
-              onSave={saveEdit}
-              onCancel={cancelEdit}
-              isSaving={isSaving}
-              saveDisabled={!isCoinbaseAddressValid}
-              disabled={editing !== null && editing !== 'coinbaseAddress'}
-              display={
-                <p className="text-muted-foreground font-mono text-xs truncate">
-                  {config.jdc.coinbase_reward_address || 'Not set'}
-                </p>
-              }
-              editContent={
-                <div>
-                  <label htmlFor="edit-coinbase-address" className="sr-only">
-                    {coinbaseAddressLabel}
-                  </label>
-                  <input
-                    id="edit-coinbase-address"
-                    type="text"
-                    value={editCoinbaseAddress}
-                    onChange={(e) => setEditCoinbaseAddress(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && isCoinbaseAddressValid && !isSaving) saveEdit();
-                      if (e.key === 'Escape') cancelEdit();
-                    }}
-                    autoFocus
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder={getBitcoinAddressPlaceholder(editNetwork)}
-                    className="w-full h-10 px-3 rounded-lg border border-input bg-background font-mono text-sm focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/15 outline-none transition-all"
-                  />
-                  <FieldError message={getBitcoinAddressError(trimmedCoinbaseAddress, editNetwork)} />
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {isSovereignSolo
-                      ? 'Where the full block reward is paid when your node finds a block.'
-                      : 'Used for coinbase rewards if the Job Declarator falls back to solo mining due to pool connection issues.'}
-                  </p>
-                </div>
-              }
-            />
           )}
         </CardContent>
       </Card>
